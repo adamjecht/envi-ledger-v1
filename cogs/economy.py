@@ -13,7 +13,12 @@ from services.economy_service import (
     remove_credits,
 )
 from services.shop_service import get_active_shop_items, get_shop_item_by_name
-from services.inventory_service import add_item_to_inventory, get_user_inventory
+from services.inventory_service import (
+    add_item_to_inventory,
+    decrease_item_quantity,
+    get_user_inventory,
+    get_user_inventory_item_by_name,
+)
 from services.log_channel_service import send_ledger_log
 from services.transaction_service import log_transaction
 from utils.constants import (
@@ -461,9 +466,13 @@ class EconomyCog(commands.Cog):
         item_lines = []
 
         for item in inventory_items:
+            use_status = "Usable" if int(item["usable"]) == 1 else "Not Usable"
+            item_type = "Consumable" if int(item["consumable"]) == 1 else "Permanent"
+
             item_lines.append(
                 f"**{item['quantity']}x {item['name']}**\n"
                 f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
+                f"Use Status: `{use_status}` | Type: `{item_type}`\n"
                 f"{item['description']}"
             )
 
@@ -472,6 +481,104 @@ class EconomyCog(commands.Cog):
             description=(
                 f"Citizen: {target_user.mention}\n\n"
                 + "\n\n".join(item_lines)
+            ),
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
+        name="use",
+        description="Use an item from your ENVI inventory.",
+    )
+    @app_commands.describe(
+        item_name="The exact name of the item you want to use.",
+    )
+    async def use_item(
+        self,
+        interaction: discord.Interaction,
+        item_name: str,
+    ):
+        ensure_user(interaction.user.id, interaction.user.display_name)
+
+        item = get_user_inventory_item_by_name(
+            user_id=interaction.user.id,
+            item_name=item_name,
+        )
+
+        if item is None:
+            embed = envi_error(
+                title="ENVI ITEM USE DENIED",
+                reason="That item was not found in your inventory.",
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        if int(item["usable"]) != 1:
+            embed = envi_error(
+                title="ENVI ITEM USE DENIED",
+                reason=(
+                    f"**{item['name']}** is registered as a non-usable item. "
+                    "It may be collectible, decorative, or reserved for staff-controlled scenes."
+                ),
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        is_consumable = int(item["consumable"]) == 1
+
+        remaining_quantity = int(item["quantity"])
+
+        if is_consumable:
+            try:
+                remaining_quantity = decrease_item_quantity(
+                    user_id=interaction.user.id,
+                    item_id=item["item_id"],
+                    quantity=1,
+                )
+            except ValueError as error:
+                embed = envi_error(
+                    title="ENVI ITEM USE DENIED",
+                    reason=str(error),
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+        use_message = item["use_message"]
+
+        if use_message is None:
+            use_message = (
+                f"**{item['name']}** used. ENVI has recorded the action."
+            )
+
+        inventory_update = (
+            f"One **{item['name']}** was consumed.\n"
+            f"Remaining Quantity: **{remaining_quantity}**"
+            if is_consumable
+            else f"**{item['name']}** remains in your inventory."
+        )
+
+        await send_ledger_log(
+            bot=interaction.client,
+            title="ENVI ITEM USE LOG",
+            description=(
+                f"User: {interaction.user.mention}\n"
+                f"Item: **{item['name']}**\n"
+                f"Category: `{item['category']}`\n"
+                f"Rarity: `{item['rarity']}`\n"
+                f"Consumable: **{'Yes' if is_consumable else 'No'}**\n"
+                f"Remaining Quantity: **{remaining_quantity}**"
+            ),
+        )
+
+        embed = envi_embed(
+            title="ENVI ITEM USED",
+            description=(
+                f"User: {interaction.user.mention}\n"
+                f"Item: **{item['name']}**\n"
+                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n\n"
+                f"{use_message}\n\n"
+                f"**Inventory Update**\n"
+                f"{inventory_update}"
             ),
         )
 
