@@ -463,6 +463,7 @@ class EconomyCog(commands.Cog):
         for item in inventory_items:
             item_lines.append(
                 f"**{item['quantity']}x {item['name']}**\n"
+                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
                 f"{item['description']}"
             )
 

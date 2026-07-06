@@ -5,6 +5,7 @@ def add_item_to_inventory(user_id: int, item_id: int, quantity: int) -> None:
     """
     Adds an item quantity to a user's inventory.
     """
+
     if quantity <= 0:
         raise ValueError("Quantity must be greater than 0.")
 
@@ -28,19 +29,28 @@ def add_item_to_inventory(user_id: int, item_id: int, quantity: int) -> None:
 
 def get_user_inventory(user_id: int) -> list[dict]:
     """
-    Gets a user's inventory with item names and descriptions.
+    Gets a user's inventory with item names, descriptions, category, and rarity.
     """
+
     with get_connection() as connection:
         rows = connection.execute(
             """
             SELECT
+                shop_items.item_id,
                 shop_items.name,
                 shop_items.description,
+                shop_items.category,
+                shop_items.rarity,
                 inventory.quantity
             FROM inventory
-            JOIN shop_items ON inventory.item_id = shop_items.item_id
-            WHERE inventory.user_id = ? AND inventory.quantity > 0
-            ORDER BY shop_items.name ASC
+            JOIN shop_items
+                ON inventory.item_id = shop_items.item_id
+            WHERE
+                inventory.user_id = ?
+                AND inventory.quantity > 0
+            ORDER BY
+                shop_items.rarity ASC,
+                shop_items.name ASC
             """,
             (user_id,),
         ).fetchall()
