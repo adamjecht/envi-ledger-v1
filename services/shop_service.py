@@ -1,7 +1,9 @@
 from db.database import get_connection
 from services.economy_service import utc_now
 from utils.constants import (
+    DEFAULT_ITEM_CONSUMABLE,
     DEFAULT_ITEM_RARITY,
+    DEFAULT_ITEM_USABLE,
     DEFAULT_SHOP_CATEGORY,
     ITEM_RARITIES,
     SHOP_CATEGORIES,
@@ -15,6 +17,9 @@ DEFAULT_SHOP_ITEMS = [
         "A voucher redeemable for one standard drink at Eclipse.",
         "Eclipse Items",
         "Common",
+        True,
+        True,
+        "Voucher redeemed. Eclipse recognizes your indulgence. Please make poor choices responsibly.",
     ),
     (
         "Obsession Perfume Sample",
@@ -22,6 +27,9 @@ DEFAULT_SHOP_ITEMS = [
         "A luxury fragrance sample from Maximillion's Obsession line.",
         "Obsession Items",
         "Uncommon",
+        True,
+        True,
+        "Perfume sample applied. Obsession has made note of the version of you trying to surface.",
     ),
     (
         "Foxy Delights Dessert Box",
@@ -29,6 +37,9 @@ DEFAULT_SHOP_ITEMS = [
         "A curated dessert box from Foxy Delights.",
         "Foxy Delights Items",
         "Common",
+        True,
+        True,
+        "Dessert box opened. Foxy Delights hopes the sugar helps. It usually does not, but hope is adorable.",
     ),
     (
         "Black Cab Transit Pass",
@@ -36,6 +47,9 @@ DEFAULT_SHOP_ITEMS = [
         "A short-distance private transit pass through Sin City.",
         "Transit",
         "Common",
+        True,
+        True,
+        "Transit pass redeemed. Your route has been logged by ENVI. Comforting? No. Efficient? Yes.",
     ),
     (
         "Velvet Obelisk Visitor Pass",
@@ -43,6 +57,9 @@ DEFAULT_SHOP_ITEMS = [
         "A limited visitor pass for approved Velvet Obelisk access.",
         "Access Passes",
         "Rare",
+        True,
+        False,
+        "Visitor pass presented. Velvet Obelisk access credentials recognized. Behave like you were expensive to invite.",
     ),
     (
         "Luxury Gift Box",
@@ -50,6 +67,9 @@ DEFAULT_SHOP_ITEMS = [
         "A premium social gift package for RP scenes.",
         "Luxury",
         "Luxury",
+        True,
+        True,
+        "Luxury gift box opened. Someone either likes you, needs something from you, or both. Usually both.",
     ),
 ]
 
@@ -94,18 +114,75 @@ def validate_item_rarity(rarity: str | None) -> str:
     return clean_rarity
 
 
+def normalize_bool(value: bool | None, default: bool) -> bool:
+    """
+    Normalizes optional boolean values.
+    """
+
+    if value is None:
+        return default
+
+    return bool(value)
+
+
+def normalize_use_message(use_message: str | None) -> str | None:
+    """
+    Normalizes item use messages.
+
+    Blank messages become None.
+    """
+
+    if use_message is None:
+        return None
+
+    clean_message = use_message.strip()
+
+    if not clean_message:
+        return None
+
+    return clean_message
+
+
+def validate_use_settings(
+    usable: bool,
+    consumable: bool,
+    use_message: str | None,
+) -> None:
+    """
+    Validates item use behavior.
+    """
+
+    if consumable and not usable:
+        raise ValueError("Consumable items must also be usable.")
+
+    if use_message is not None and not usable:
+        raise ValueError("Items with a use message must also be usable.")
+
+
 def seed_default_shop_items() -> None:
     """
-    Adds the default V1 shop items if they do not already exist.
+    Adds the default shop items if they do not already exist.
 
-    For existing default items, this also upgrades category and rarity
-    only when the item still has the old default metadata.
+    For existing default items, this also upgrades V1.5 metadata
+    only when the item still has old/default values.
     """
 
     now = utc_now()
 
     with get_connection() as connection:
-        for name, price, description, category, rarity in DEFAULT_SHOP_ITEMS:
+        for (
+            name,
+            price,
+            description,
+            category,
+            rarity,
+            usable,
+            consumable,
+            use_message,
+        ) in DEFAULT_SHOP_ITEMS:
+            usable_value = 1 if usable else 0
+            consumable_value = 1 if consumable else 0
+
             connection.execute(
                 """
                 INSERT OR IGNORE INTO shop_items (
@@ -114,13 +191,27 @@ def seed_default_shop_items() -> None:
                     description,
                     category,
                     rarity,
+                    usable,
+                    consumable,
+                    use_message,
                     active,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (name, price, description, category, rarity, now, now),
+                (
+                    name,
+                    price,
+                    description,
+                    category,
+                    rarity,
+                    usable_value,
+                    consumable_value,
+                    use_message,
+                    now,
+                    now,
+                ),
             )
 
             connection.execute(
@@ -145,6 +236,29 @@ def seed_default_shop_items() -> None:
                 ),
             )
 
+            connection.execute(
+                """
+                UPDATE shop_items
+                SET
+                    usable = ?,
+                    consumable = ?,
+                    use_message = ?,
+                    updated_at = ?
+                WHERE
+                    name = ?
+                    AND usable = 0
+                    AND consumable = 0
+                    AND use_message IS NULL
+                """,
+                (
+                    usable_value,
+                    consumable_value,
+                    use_message,
+                    now,
+                    name,
+                ),
+            )
+
         connection.commit()
 
 
@@ -165,7 +279,10 @@ def get_active_shop_items(category: str | None = None) -> list[dict]:
                     price,
                     description,
                     category,
-                    rarity
+                    rarity,
+                    usable,
+                    consumable,
+                    use_message
                 FROM shop_items
                 WHERE active = 1
                 ORDER BY price ASC, name ASC
@@ -182,7 +299,10 @@ def get_active_shop_items(category: str | None = None) -> list[dict]:
                     price,
                     description,
                     category,
-                    rarity
+                    rarity,
+                    usable,
+                    consumable,
+                    use_message
                 FROM shop_items
                 WHERE active = 1 AND category = ?
                 ORDER BY price ASC, name ASC
@@ -208,7 +328,10 @@ def get_shop_item_by_name(item_name: str) -> dict | None:
                 price,
                 description,
                 category,
-                rarity
+                rarity,
+                usable,
+                consumable,
+                use_message
             FROM shop_items
             WHERE LOWER(name) = LOWER(?) AND active = 1
             """,
@@ -236,6 +359,9 @@ def get_shop_item_by_id(item_id: int) -> dict | None:
                 description,
                 category,
                 rarity,
+                usable,
+                consumable,
+                use_message,
                 active
             FROM shop_items
             WHERE item_id = ?
@@ -265,6 +391,9 @@ def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
                 description,
                 category,
                 rarity,
+                usable,
+                consumable,
+                use_message,
                 active
             FROM shop_items
             WHERE LOWER(name) = LOWER(?)
@@ -284,6 +413,9 @@ def create_shop_item(
     description: str,
     category: str | None = None,
     rarity: str | None = None,
+    usable: bool | None = None,
+    consumable: bool | None = None,
+    use_message: str | None = None,
 ) -> dict:
     """
     Creates a new active shop item.
@@ -293,6 +425,15 @@ def create_shop_item(
     clean_description = description.strip()
     clean_category = validate_shop_category(category)
     clean_rarity = validate_item_rarity(rarity)
+    clean_usable = normalize_bool(usable, DEFAULT_ITEM_USABLE)
+    clean_consumable = normalize_bool(consumable, DEFAULT_ITEM_CONSUMABLE)
+    clean_use_message = normalize_use_message(use_message)
+
+    validate_use_settings(
+        usable=clean_usable,
+        consumable=clean_consumable,
+        use_message=clean_use_message,
+    )
 
     if not clean_name:
         raise ValueError("Item name cannot be empty.")
@@ -319,11 +460,14 @@ def create_shop_item(
                 description,
                 category,
                 rarity,
+                usable,
+                consumable,
+                use_message,
                 active,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
             (
                 clean_name,
@@ -331,6 +475,9 @@ def create_shop_item(
                 clean_description,
                 clean_category,
                 clean_rarity,
+                1 if clean_usable else 0,
+                1 if clean_consumable else 0,
+                clean_use_message,
                 now,
                 now,
             ),
@@ -355,6 +502,9 @@ def update_shop_item(
     active: bool | None = None,
     category: str | None = None,
     rarity: str | None = None,
+    usable: bool | None = None,
+    consumable: bool | None = None,
+    use_message: str | None = None,
 ) -> dict:
     """
     Updates an existing shop item.
@@ -369,6 +519,10 @@ def update_shop_item(
 
     updates = []
     values = []
+
+    next_usable = bool(item["usable"])
+    next_consumable = bool(item["consumable"])
+    next_use_message = item["use_message"]
 
     if new_name is not None:
         clean_new_name = new_name.strip()
@@ -411,6 +565,33 @@ def update_shop_item(
 
         updates.append("rarity = ?")
         values.append(clean_rarity)
+
+    if usable is not None:
+        next_usable = bool(usable)
+
+    if consumable is not None:
+        next_consumable = bool(consumable)
+
+    if use_message is not None:
+        next_use_message = normalize_use_message(use_message)
+
+    validate_use_settings(
+        usable=next_usable,
+        consumable=next_consumable,
+        use_message=next_use_message,
+    )
+
+    if usable is not None:
+        updates.append("usable = ?")
+        values.append(1 if next_usable else 0)
+
+    if consumable is not None:
+        updates.append("consumable = ?")
+        values.append(1 if next_consumable else 0)
+
+    if use_message is not None:
+        updates.append("use_message = ?")
+        values.append(next_use_message)
 
     if active is not None:
         updates.append("active = ?")

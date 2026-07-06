@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS shop_items (
     description TEXT NOT NULL,
     category TEXT NOT NULL DEFAULT 'General',
     rarity TEXT NOT NULL DEFAULT 'Common',
+    usable INTEGER NOT NULL DEFAULT 0,
+    consumable INTEGER NOT NULL DEFAULT 0,
+    use_message TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

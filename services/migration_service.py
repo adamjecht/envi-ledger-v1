@@ -61,4 +61,25 @@ def run_database_migrations() -> None:
             column_definition="TEXT NOT NULL DEFAULT 'Common'",
         )
 
+        add_column_if_missing(
+            cursor=cursor,
+            table_name="shop_items",
+            column_name="usable",
+            column_definition="INTEGER NOT NULL DEFAULT 0",
+        )
+
+        add_column_if_missing(
+            cursor=cursor,
+            table_name="shop_items",
+            column_name="consumable",
+            column_definition="INTEGER NOT NULL DEFAULT 0",
+        )
+
+        add_column_if_missing(
+            cursor=cursor,
+            table_name="shop_items",
+            column_name="use_message",
+            column_definition="TEXT",
+        )
+
         connection.commit()
