@@ -26,3 +26,34 @@ TRANSACTION_ADMIN_ADD = "ADMIN_ADD"
 TRANSACTION_ADMIN_REMOVE = "ADMIN_REMOVE"
 TRANSACTION_ADMIN_SET = "ADMIN_SET"
 TRANSACTION_ADMIN_RESET = "ADMIN_RESET"
+
+
+# -----------------------------
+# V1.5 Shop Metadata
+# -----------------------------
+
+DEFAULT_SHOP_CATEGORY = "General"
+DEFAULT_ITEM_RARITY = "Common"
+
+SHOP_CATEGORIES = (
+    "General",
+    "Food & Drink",
+    "Luxury",
+    "Transit",
+    "Access Passes",
+    "Obsession Items",
+    "Eclipse Items",
+    "Foxy Delights Items",
+    "Black Badge / Civic",
+    "Collectibles",
+    "Event Items",
+)
+
+ITEM_RARITIES = (
+    "Common",
+    "Uncommon",
+    "Rare",
+    "Luxury",
+    "Restricted",
+    "Exordium-Class",
+)

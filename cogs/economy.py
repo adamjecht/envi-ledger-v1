@@ -20,6 +20,7 @@ from utils.constants import (
     DAILY_AMOUNT,
     DAILY_COOLDOWN_SECONDS,
     LEADERBOARD_LIMIT,
+    SHOP_CATEGORIES,
     TRANSACTION_DAILY,
     TRANSACTION_SHOP_PURCHASE,
     TRANSACTION_TRANSFER_RECEIVED,
@@ -189,7 +190,7 @@ class EconomyCog(commands.Cog):
                 f"Assignment: **{assignment}**\n"
                 f"Compensation: **{format_credits(payout)}**\n"
                 f"Updated Balance: **{format_credits(new_balance)}**\n"
-                "Next assignment available in **1h**."
+                "Next assignment available in **4h**."
             ),
         )
 
@@ -289,13 +290,33 @@ class EconomyCog(commands.Cog):
         name="shop",
         description="View the ENVI Commercial Exchange.",
     )
-    async def shop(self, interaction: discord.Interaction):
-        items = get_active_shop_items()
+    @app_commands.describe(
+        category="Optional category filter for the shop.",
+    )
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name=category, value=category)
+            for category in SHOP_CATEGORIES
+        ],
+    )
+    async def shop(
+        self,
+        interaction: discord.Interaction,
+        category: app_commands.Choice[str] | None = None,
+    ):
+        selected_category = category.value if category is not None else None
+        items = get_active_shop_items(selected_category)
 
         if not items:
+            category_text = (
+                f" in category `{selected_category}`"
+                if selected_category is not None
+                else ""
+            )
+
             embed = envi_error(
                 title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
-                reason="No active shop items are currently registered.",
+                reason=f"No active shop items are currently registered{category_text}.",
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
@@ -305,11 +326,17 @@ class EconomyCog(commands.Cog):
         for item in items:
             item_lines.append(
                 f"**{item['name']}** — {format_credits(item['price'])}\n"
+                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
                 f"{item['description']}"
             )
 
+        title = "ENVI COMMERCIAL EXCHANGE"
+
+        if selected_category is not None:
+            title = f"{title} — {selected_category}"
+
         embed = envi_embed(
-            title="ENVI COMMERCIAL EXCHANGE",
+            title=title,
             description="\n\n".join(item_lines),
         )
 

@@ -1,5 +1,11 @@
 from db.database import get_connection
 from services.economy_service import utc_now
+from utils.constants import (
+    DEFAULT_ITEM_RARITY,
+    DEFAULT_SHOP_CATEGORY,
+    ITEM_RARITIES,
+    SHOP_CATEGORIES,
+)
 
 
 DEFAULT_SHOP_ITEMS = [
@@ -7,87 +13,192 @@ DEFAULT_SHOP_ITEMS = [
         "Eclipse Drink Voucher",
         250,
         "A voucher redeemable for one standard drink at Eclipse.",
+        "Eclipse Items",
+        "Common",
     ),
     (
         "Obsession Perfume Sample",
         500,
         "A luxury fragrance sample from Maximillion's Obsession line.",
+        "Obsession Items",
+        "Uncommon",
     ),
     (
         "Foxy Delights Dessert Box",
         300,
         "A curated dessert box from Foxy Delights.",
+        "Foxy Delights Items",
+        "Common",
     ),
     (
         "Black Cab Transit Pass",
         400,
         "A short-distance private transit pass through Sin City.",
+        "Transit",
+        "Common",
     ),
     (
         "Velvet Obelisk Visitor Pass",
         1500,
         "A limited visitor pass for approved Velvet Obelisk access.",
+        "Access Passes",
+        "Rare",
     ),
     (
         "Luxury Gift Box",
         2000,
         "A premium social gift package for RP scenes.",
+        "Luxury",
+        "Luxury",
     ),
 ]
 
 
+def validate_shop_category(category: str | None) -> str:
+    """
+    Validates and normalizes an item category.
+    """
+
+    if category is None:
+        return DEFAULT_SHOP_CATEGORY
+
+    clean_category = category.strip()
+
+    if not clean_category:
+        return DEFAULT_SHOP_CATEGORY
+
+    if clean_category not in SHOP_CATEGORIES:
+        valid_categories = ", ".join(SHOP_CATEGORIES)
+        raise ValueError(f"Invalid category. Valid categories: {valid_categories}")
+
+    return clean_category
+
+
+def validate_item_rarity(rarity: str | None) -> str:
+    """
+    Validates and normalizes an item rarity.
+    """
+
+    if rarity is None:
+        return DEFAULT_ITEM_RARITY
+
+    clean_rarity = rarity.strip()
+
+    if not clean_rarity:
+        return DEFAULT_ITEM_RARITY
+
+    if clean_rarity not in ITEM_RARITIES:
+        valid_rarities = ", ".join(ITEM_RARITIES)
+        raise ValueError(f"Invalid rarity. Valid rarities: {valid_rarities}")
+
+    return clean_rarity
+
+
 def seed_default_shop_items() -> None:
     """
-    Adds the default v1 shop items if they do not already exist.
+    Adds the default V1 shop items if they do not already exist.
+
+    For existing default items, this also upgrades category and rarity
+    only when the item still has the old default metadata.
     """
+
     now = utc_now()
 
     with get_connection() as connection:
-        for name, price, description in DEFAULT_SHOP_ITEMS:
+        for name, price, description, category, rarity in DEFAULT_SHOP_ITEMS:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO shop_items (
                     name,
                     price,
                     description,
+                    category,
+                    rarity,
                     active,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (name, price, description, now, now),
+                (name, price, description, category, rarity, now, now),
+            )
+
+            connection.execute(
+                """
+                UPDATE shop_items
+                SET
+                    category = ?,
+                    rarity = ?,
+                    updated_at = ?
+                WHERE
+                    name = ?
+                    AND category = ?
+                    AND rarity = ?
+                """,
+                (
+                    category,
+                    rarity,
+                    now,
+                    name,
+                    DEFAULT_SHOP_CATEGORY,
+                    DEFAULT_ITEM_RARITY,
+                ),
             )
 
         connection.commit()
 
 
-def get_active_shop_items() -> list[dict]:
+def get_active_shop_items(category: str | None = None) -> list[dict]:
     """
     Returns all active shop items.
+
+    If a category is provided, only active items in that category are returned.
     """
+
     with get_connection() as connection:
-        rows = connection.execute(
-            """
-            SELECT
-                item_id,
-                name,
-                price,
-                description
-            FROM shop_items
-            WHERE active = 1
-            ORDER BY price ASC, name ASC
-            """
-        ).fetchall()
+        if category is None:
+            rows = connection.execute(
+                """
+                SELECT
+                    item_id,
+                    name,
+                    price,
+                    description,
+                    category,
+                    rarity
+                FROM shop_items
+                WHERE active = 1
+                ORDER BY price ASC, name ASC
+                """
+            ).fetchall()
+        else:
+            clean_category = validate_shop_category(category)
+
+            rows = connection.execute(
+                """
+                SELECT
+                    item_id,
+                    name,
+                    price,
+                    description,
+                    category,
+                    rarity
+                FROM shop_items
+                WHERE active = 1 AND category = ?
+                ORDER BY price ASC, name ASC
+                """,
+                (clean_category,),
+            ).fetchall()
 
     return [dict(row) for row in rows]
+
 
 def get_shop_item_by_name(item_name: str) -> dict | None:
     """
     Finds an active shop item by name.
-
     Matching is case-insensitive.
     """
+
     with get_connection() as connection:
         row = connection.execute(
             """
@@ -95,10 +206,11 @@ def get_shop_item_by_name(item_name: str) -> dict | None:
                 item_id,
                 name,
                 price,
-                description
+                description,
+                category,
+                rarity
             FROM shop_items
-            WHERE LOWER(name) = LOWER(?)
-              AND active = 1
+            WHERE LOWER(name) = LOWER(?) AND active = 1
             """,
             (item_name,),
         ).fetchone()
@@ -108,10 +220,12 @@ def get_shop_item_by_name(item_name: str) -> dict | None:
 
     return dict(row)
 
+
 def get_shop_item_by_id(item_id: int) -> dict | None:
     """
     Finds a shop item by ID, including inactive items.
     """
+
     with get_connection() as connection:
         row = connection.execute(
             """
@@ -120,6 +234,8 @@ def get_shop_item_by_id(item_id: int) -> dict | None:
                 name,
                 price,
                 description,
+                category,
+                rarity,
                 active
             FROM shop_items
             WHERE item_id = ?
@@ -136,9 +252,9 @@ def get_shop_item_by_id(item_id: int) -> dict | None:
 def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
     """
     Finds a shop item by name, including inactive items.
-
     Matching is case-insensitive.
     """
+
     with get_connection() as connection:
         row = connection.execute(
             """
@@ -147,6 +263,8 @@ def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
                 name,
                 price,
                 description,
+                category,
+                rarity,
                 active
             FROM shop_items
             WHERE LOWER(name) = LOWER(?)
@@ -160,12 +278,21 @@ def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
     return dict(row)
 
 
-def create_shop_item(name: str, price: int, description: str) -> dict:
+def create_shop_item(
+    name: str,
+    price: int,
+    description: str,
+    category: str | None = None,
+    rarity: str | None = None,
+) -> dict:
     """
     Creates a new active shop item.
     """
+
     clean_name = name.strip()
     clean_description = description.strip()
+    clean_category = validate_shop_category(category)
+    clean_rarity = validate_item_rarity(rarity)
 
     if not clean_name:
         raise ValueError("Item name cannot be empty.")
@@ -190,19 +317,28 @@ def create_shop_item(name: str, price: int, description: str) -> dict:
                 name,
                 price,
                 description,
+                category,
+                rarity,
                 active,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
             """,
-            (clean_name, price, clean_description, now, now),
+            (
+                clean_name,
+                price,
+                clean_description,
+                clean_category,
+                clean_rarity,
+                now,
+                now,
+            ),
         )
 
         connection.commit()
 
-        item_id = cursor.lastrowid
-
+    item_id = cursor.lastrowid
     item = get_shop_item_by_id(item_id)
 
     if item is None:
@@ -217,12 +353,15 @@ def update_shop_item(
     price: int | None = None,
     description: str | None = None,
     active: bool | None = None,
+    category: str | None = None,
+    rarity: str | None = None,
 ) -> dict:
     """
     Updates an existing shop item.
 
     Any field left as None will stay unchanged.
     """
+
     item = get_shop_item_by_name_any_status(current_name.strip())
 
     if item is None:
@@ -261,6 +400,18 @@ def update_shop_item(
         updates.append("description = ?")
         values.append(clean_description)
 
+    if category is not None:
+        clean_category = validate_shop_category(category)
+
+        updates.append("category = ?")
+        values.append(clean_category)
+
+    if rarity is not None:
+        clean_rarity = validate_item_rarity(rarity)
+
+        updates.append("rarity = ?")
+        values.append(clean_rarity)
+
     if active is not None:
         updates.append("active = ?")
         values.append(1 if active else 0)
@@ -297,6 +448,7 @@ def deactivate_shop_item(item_name: str) -> dict:
     """
     Deactivates a shop item instead of deleting it.
     """
+
     item = get_shop_item_by_name_any_status(item_name.strip())
 
     if item is None:

@@ -14,6 +14,8 @@ from services.shop_service import create_shop_item, deactivate_shop_item, update
 from services.transaction_service import get_recent_transactions, log_transaction
 from utils.checks import user_has_admin_role
 from utils.constants import (
+    ITEM_RARITIES,
+    SHOP_CATEGORIES,
     TRANSACTION_ADMIN_ADD,
     TRANSACTION_ADMIN_REMOVE,
     TRANSACTION_ADMIN_RESET,
@@ -293,20 +295,44 @@ async def admin_setbalance(
     name="additem",
     description="Add a new item to the ENVI Commercial Exchange.",
 )
+@app_commands.describe(
+    name="The item name.",
+    price="The item price in Nexus Credits.",
+    description="The item description.",
+    category="The item category.",
+    rarity="The item rarity.",
+)
+@app_commands.choices(
+    category=[
+        app_commands.Choice(name=category, value=category)
+        for category in SHOP_CATEGORIES
+    ],
+    rarity=[
+        app_commands.Choice(name=rarity, value=rarity)
+        for rarity in ITEM_RARITIES
+    ],
+)
 async def admin_additem(
     interaction: discord.Interaction,
     name: str,
     price: int,
     description: str,
+    category: app_commands.Choice[str] | None = None,
+    rarity: app_commands.Choice[str] | None = None,
 ):
     if not await require_admin(interaction):
         return
+
+    selected_category = category.value if category is not None else None
+    selected_rarity = rarity.value if rarity is not None else None
 
     try:
         item = create_shop_item(
             name=name,
             price=price,
             description=description,
+            category=selected_category,
+            rarity=selected_rarity,
         )
     except ValueError as error:
         embed = envi_error(
@@ -324,6 +350,8 @@ async def admin_additem(
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             f"Status: **Active**\n"
             f"Description: {item['description']}"
         ),
@@ -335,6 +363,8 @@ async def admin_additem(
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             f"Status: **Active**\n"
             f"Description: {item['description']}"
         ),
@@ -346,6 +376,25 @@ async def admin_additem(
     name="edititem",
     description="Edit an existing ENVI Commercial Exchange item.",
 )
+@app_commands.describe(
+    current_name="The current item name.",
+    new_name="Optional new item name.",
+    price="Optional new item price.",
+    description="Optional new item description.",
+    active="Optional active/inactive status.",
+    category="Optional new item category.",
+    rarity="Optional new item rarity.",
+)
+@app_commands.choices(
+    category=[
+        app_commands.Choice(name=category, value=category)
+        for category in SHOP_CATEGORIES
+    ],
+    rarity=[
+        app_commands.Choice(name=rarity, value=rarity)
+        for rarity in ITEM_RARITIES
+    ],
+)
 async def admin_edititem(
     interaction: discord.Interaction,
     current_name: str,
@@ -353,9 +402,14 @@ async def admin_edititem(
     price: int | None = None,
     description: str | None = None,
     active: bool | None = None,
+    category: app_commands.Choice[str] | None = None,
+    rarity: app_commands.Choice[str] | None = None,
 ):
     if not await require_admin(interaction):
         return
+
+    selected_category = category.value if category is not None else None
+    selected_rarity = rarity.value if rarity is not None else None
 
     try:
         item = update_shop_item(
@@ -364,6 +418,8 @@ async def admin_edititem(
             price=price,
             description=description,
             active=active,
+            category=selected_category,
+            rarity=selected_rarity,
         )
     except ValueError as error:
         embed = envi_error(
@@ -383,6 +439,8 @@ async def admin_edititem(
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             f"Status: **{status}**\n"
             f"Description: {item['description']}"
         ),
@@ -394,6 +452,8 @@ async def admin_edititem(
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             f"Status: **{status}**\n"
             f"Description: {item['description']}"
         ),
@@ -429,6 +489,8 @@ async def admin_removeitem(
             "Type: `ADMIN_SHOP_DEACTIVATE`\n"
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             "Status: **Inactive**"
         ),
     )
@@ -438,6 +500,8 @@ async def admin_removeitem(
         description=(
             f"Operator: {interaction.user.mention}\n"
             f"Item: **{item['name']}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
             f"Status: **Inactive**\n"
             "Historical records and existing inventories remain intact."
         ),

@@ -19,11 +19,12 @@ CREATE TABLE IF NOT EXISTS shop_items (
     name TEXT NOT NULL UNIQUE,
     price INTEGER NOT NULL,
     description TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'General',
+    rarity TEXT NOT NULL DEFAULT 'Common',
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS inventory (
     user_id INTEGER NOT NULL,
     item_id INTEGER NOT NULL,
