@@ -82,4 +82,11 @@ def run_database_migrations() -> None:
             column_definition="TEXT",
         )
 
+        add_column_if_missing(
+            cursor=cursor,
+            table_name="shop_items",
+            column_name="stock",
+            column_definition="INTEGER",
+        )
+
         connection.commit()

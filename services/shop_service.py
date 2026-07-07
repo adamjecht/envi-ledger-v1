@@ -20,6 +20,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         True,
         "Voucher redeemed. Eclipse recognizes your indulgence. Please make poor choices responsibly.",
+        None,
     ),
     (
         "Obsession Perfume Sample",
@@ -30,6 +31,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         True,
         "Perfume sample applied. Obsession has made note of the version of you trying to surface.",
+        None,
     ),
     (
         "Foxy Delights Dessert Box",
@@ -40,6 +42,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         True,
         "Dessert box opened. Foxy Delights hopes the sugar helps. It usually does not, but hope is adorable.",
+        None,
     ),
     (
         "Black Cab Transit Pass",
@@ -50,6 +53,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         True,
         "Transit pass redeemed. Your route has been logged by ENVI. Comforting? No. Efficient? Yes.",
+        None,
     ),
     (
         "Velvet Obelisk Visitor Pass",
@@ -60,6 +64,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         False,
         "Visitor pass presented. Velvet Obelisk access credentials recognized. Behave like you were expensive to invite.",
+        None,
     ),
     (
         "Luxury Gift Box",
@@ -70,6 +75,7 @@ DEFAULT_SHOP_ITEMS = [
         True,
         True,
         "Luxury gift box opened. Someone either likes you, needs something from you, or both. Usually both.",
+        None,
     ),
 ]
 
@@ -143,6 +149,23 @@ def normalize_use_message(use_message: str | None) -> str | None:
     return clean_message
 
 
+def normalize_stock(stock: int | None) -> int | None:
+    """
+    Normalizes stock values.
+
+    None means unlimited stock.
+    Any provided stock value must be 0 or greater.
+    """
+
+    if stock is None:
+        return None
+
+    if stock < 0:
+        raise ValueError("Stock cannot be negative.")
+
+    return stock
+
+
 def validate_use_settings(
     usable: bool,
     consumable: bool,
@@ -157,6 +180,20 @@ def validate_use_settings(
 
     if use_message is not None and not usable:
         raise ValueError("Items with a use message must also be usable.")
+
+
+def format_stock(stock: int | None) -> str:
+    """
+    Formats stock for display.
+    """
+
+    if stock is None:
+        return "Unlimited"
+
+    if int(stock) == 0:
+        return "Sold Out"
+
+    return str(stock)
 
 
 def seed_default_shop_items() -> None:
@@ -179,6 +216,7 @@ def seed_default_shop_items() -> None:
             usable,
             consumable,
             use_message,
+            stock,
         ) in DEFAULT_SHOP_ITEMS:
             usable_value = 1 if usable else 0
             consumable_value = 1 if consumable else 0
@@ -194,11 +232,12 @@ def seed_default_shop_items() -> None:
                     usable,
                     consumable,
                     use_message,
+                    stock,
                     active,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (
                     name,
@@ -209,6 +248,7 @@ def seed_default_shop_items() -> None:
                     usable_value,
                     consumable_value,
                     use_message,
+                    stock,
                     now,
                     now,
                 ),
@@ -282,7 +322,8 @@ def get_active_shop_items(category: str | None = None) -> list[dict]:
                     rarity,
                     usable,
                     consumable,
-                    use_message
+                    use_message,
+                    stock
                 FROM shop_items
                 WHERE active = 1
                 ORDER BY price ASC, name ASC
@@ -302,7 +343,8 @@ def get_active_shop_items(category: str | None = None) -> list[dict]:
                     rarity,
                     usable,
                     consumable,
-                    use_message
+                    use_message,
+                    stock
                 FROM shop_items
                 WHERE active = 1 AND category = ?
                 ORDER BY price ASC, name ASC
@@ -331,7 +373,8 @@ def get_shop_item_by_name(item_name: str) -> dict | None:
                 rarity,
                 usable,
                 consumable,
-                use_message
+                use_message,
+                stock
             FROM shop_items
             WHERE LOWER(name) = LOWER(?) AND active = 1
             """,
@@ -362,6 +405,7 @@ def get_shop_item_by_id(item_id: int) -> dict | None:
                 usable,
                 consumable,
                 use_message,
+                stock,
                 active
             FROM shop_items
             WHERE item_id = ?
@@ -394,6 +438,7 @@ def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
                 usable,
                 consumable,
                 use_message,
+                stock,
                 active
             FROM shop_items
             WHERE LOWER(name) = LOWER(?)
@@ -416,6 +461,7 @@ def create_shop_item(
     usable: bool | None = None,
     consumable: bool | None = None,
     use_message: str | None = None,
+    stock: int | None = None,
 ) -> dict:
     """
     Creates a new active shop item.
@@ -428,6 +474,7 @@ def create_shop_item(
     clean_usable = normalize_bool(usable, DEFAULT_ITEM_USABLE)
     clean_consumable = normalize_bool(consumable, DEFAULT_ITEM_CONSUMABLE)
     clean_use_message = normalize_use_message(use_message)
+    clean_stock = normalize_stock(stock)
 
     validate_use_settings(
         usable=clean_usable,
@@ -463,11 +510,12 @@ def create_shop_item(
                 usable,
                 consumable,
                 use_message,
+                stock,
                 active,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
             """,
             (
                 clean_name,
@@ -478,6 +526,7 @@ def create_shop_item(
                 1 if clean_usable else 0,
                 1 if clean_consumable else 0,
                 clean_use_message,
+                clean_stock,
                 now,
                 now,
             ),
@@ -505,6 +554,7 @@ def update_shop_item(
     usable: bool | None = None,
     consumable: bool | None = None,
     use_message: str | None = None,
+    stock: int | None = None,
 ) -> dict:
     """
     Updates an existing shop item.
@@ -592,6 +642,12 @@ def update_shop_item(
     if use_message is not None:
         updates.append("use_message = ?")
         values.append(next_use_message)
+
+    if stock is not None:
+        clean_stock = normalize_stock(stock)
+
+        updates.append("stock = ?")
+        values.append(clean_stock)
 
     if active is not None:
         updates.append("active = ?")

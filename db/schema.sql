@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS shop_items (
     usable INTEGER NOT NULL DEFAULT 0,
     consumable INTEGER NOT NULL DEFAULT 0,
     use_message TEXT,
+    stock INTEGER,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

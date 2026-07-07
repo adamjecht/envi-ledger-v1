@@ -12,7 +12,11 @@ from services.economy_service import (
     get_top_balances,
     remove_credits,
 )
-from services.shop_service import get_active_shop_items, get_shop_item_by_name
+from services.shop_service import (
+    format_stock,
+    get_active_shop_items,
+    get_shop_item_by_name,
+)
 from services.inventory_service import (
     add_item_to_inventory,
     decrease_item_quantity,
@@ -309,6 +313,8 @@ class EconomyCog(commands.Cog):
         interaction: discord.Interaction,
         category: app_commands.Choice[str] | None = None,
     ):
+        await interaction.response.defer()
+
         selected_category = category.value if category is not None else None
         items = get_active_shop_items(selected_category)
 
@@ -323,7 +329,7 @@ class EconomyCog(commands.Cog):
                 title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
                 reason=f"No active shop items are currently registered{category_text}.",
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         item_lines = []
@@ -331,7 +337,8 @@ class EconomyCog(commands.Cog):
         for item in items:
             item_lines.append(
                 f"**{item['name']}** — {format_credits(item['price'])}\n"
-                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
+                f"Category: `{item['category']}` | Rarity: `{item['rarity']}` | "
+                f"Stock: `{format_stock(item['stock'])}`\n"
                 f"{item['description']}"
             )
 
@@ -345,7 +352,7 @@ class EconomyCog(commands.Cog):
             description="\n\n".join(item_lines),
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(
         name="buy",

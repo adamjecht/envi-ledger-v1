@@ -10,7 +10,12 @@ from services.economy_service import (
 )
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
-from services.shop_service import create_shop_item, deactivate_shop_item, update_shop_item
+from services.shop_service import (
+    create_shop_item,
+    deactivate_shop_item,
+    format_stock,
+    update_shop_item,
+)
 from services.transaction_service import get_recent_transactions, log_transaction
 from utils.checks import user_has_admin_role
 from utils.constants import (
@@ -301,6 +306,7 @@ async def admin_setbalance(
     description="The item description.",
     category="The item category.",
     rarity="The item rarity.",
+    stock="Optional limited stock. Leave blank for unlimited stock.",
 )
 @app_commands.choices(
     category=[
@@ -319,6 +325,7 @@ async def admin_additem(
     description: str,
     category: app_commands.Choice[str] | None = None,
     rarity: app_commands.Choice[str] | None = None,
+    stock: int | None = None,
 ):
     if not await require_admin(interaction):
         return
@@ -333,6 +340,7 @@ async def admin_additem(
             description=description,
             category=selected_category,
             rarity=selected_rarity,
+            stock=stock,
         )
     except ValueError as error:
         embed = envi_error(
@@ -352,6 +360,7 @@ async def admin_additem(
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
+            f"Stock: `{format_stock(item['stock'])}`\n"
             f"Status: **Active**\n"
             f"Description: {item['description']}"
         ),
@@ -365,6 +374,7 @@ async def admin_additem(
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
+            f"Stock: `{format_stock(item['stock'])}`\n"
             f"Status: **Active**\n"
             f"Description: {item['description']}"
         ),
@@ -384,6 +394,7 @@ async def admin_additem(
     active="Optional active/inactive status.",
     category="Optional new item category.",
     rarity="Optional new item rarity.",
+    stock="Optional new stock amount. Leave blank to keep current stock.",
 )
 @app_commands.choices(
     category=[
@@ -404,6 +415,7 @@ async def admin_edititem(
     active: bool | None = None,
     category: app_commands.Choice[str] | None = None,
     rarity: app_commands.Choice[str] | None = None,
+    stock: int | None = None,
 ):
     if not await require_admin(interaction):
         return
@@ -420,6 +432,7 @@ async def admin_edititem(
             active=active,
             category=selected_category,
             rarity=selected_rarity,
+            stock=stock,
         )
     except ValueError as error:
         embed = envi_error(
@@ -441,6 +454,7 @@ async def admin_edititem(
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
+            f"Stock: `{format_stock(item['stock'])}`\n"
             f"Status: **{status}**\n"
             f"Description: {item['description']}"
         ),
@@ -454,6 +468,7 @@ async def admin_edititem(
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
+            f"Stock: `{format_stock(item['stock'])}`\n"
             f"Status: **{status}**\n"
             f"Description: {item['description']}"
         ),
@@ -491,7 +506,8 @@ async def admin_removeitem(
             f"Item: **{item['name']}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
-            "Status: **Inactive**"
+            f"Stock: `{format_stock(item['stock'])}`\n"
+            f"Status: **Inactive**"
         ),
     )
 
@@ -502,7 +518,8 @@ async def admin_removeitem(
             f"Item: **{item['name']}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
-            f"Status: **Inactive**\n"
+            f"Stock: `{format_stock(item['stock'])}`\n"
+            f"Status: **Inactive**"
             "Historical records and existing inventories remain intact."
         ),
     )
