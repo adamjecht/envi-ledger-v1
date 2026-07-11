@@ -9,6 +9,7 @@ from services.economy_service import (
     set_balance,
 )
 from services.economy_stats_service import get_economy_stats
+from services.economy_report_service import build_economy_report
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
 from services.shop_service import (
@@ -574,6 +575,31 @@ async def admin_economy(interaction: discord.Interaction):
     )
 
     await interaction.followup.send(embed=embed, ephemeral=True)
+
+@admin_group.command(
+    name="economyreport",
+    description="Generate a SIN News Financial Pulse economy report.",
+)
+@app_commands.describe(
+    public="Post publicly in this channel instead of privately.",
+)
+async def admin_economyreport(
+    interaction: discord.Interaction,
+    public: bool = False,
+):
+    if not await require_admin(interaction):
+        return
+
+    await interaction.response.defer(ephemeral=not public)
+
+    report = build_economy_report()
+
+    embed = envi_embed(
+        title=report["title"],
+        description=report["description"],
+    )
+
+    await interaction.followup.send(embed=embed, ephemeral=not public)
 
 @admin_group.command(
     name="transactions",
