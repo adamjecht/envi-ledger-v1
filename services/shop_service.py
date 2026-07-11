@@ -195,6 +195,61 @@ def format_stock(stock: int | None) -> str:
 
     return str(stock)
 
+def decrease_item_stock(item_id: int, quantity: int) -> int | None:
+    """
+    Decreases stock for a limited-stock item.
+
+    Returns None if the item has unlimited stock.
+    Returns the remaining stock amount if the item has limited stock.
+    """
+
+    if quantity <= 0:
+        raise ValueError("Quantity must be greater than zero.")
+
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT stock
+            FROM shop_items
+            WHERE item_id = ? AND active = 1
+            """,
+            (item_id,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError("Requested item is not registered in the active exchange.")
+
+        current_stock = row["stock"]
+
+        if current_stock is None:
+            return None
+
+        current_stock = int(current_stock)
+
+        if current_stock <= 0:
+            raise ValueError("Requested item is sold out.")
+
+        if current_stock < quantity:
+            raise ValueError(
+                f"Requested quantity exceeds available stock. "
+                f"Available stock: {current_stock}."
+            )
+
+        remaining_stock = current_stock - quantity
+
+        connection.execute(
+            """
+            UPDATE shop_items
+            SET stock = ?, updated_at = ?
+            WHERE item_id = ?
+            """,
+            (remaining_stock, utc_now(), item_id),
+        )
+
+        connection.commit()
+
+    return remaining_stock
+
 
 def seed_default_shop_items() -> None:
     """

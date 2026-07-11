@@ -13,6 +13,7 @@ from services.economy_service import (
     remove_credits,
 )
 from services.shop_service import (
+    decrease_item_stock,
     format_stock,
     get_active_shop_items,
     get_shop_item_by_name,
@@ -364,6 +365,8 @@ class EconomyCog(commands.Cog):
         item_name: str,
         quantity: int = 1,
     ):
+        await interaction.response.defer()
+
         user = interaction.user
 
         ensure_user(
@@ -376,7 +379,7 @@ class EconomyCog(commands.Cog):
                 title="ENVI PURCHASE DENIED",
                 reason="Quantity must be greater than zero.",
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         item = get_shop_item_by_name(item_name)
@@ -386,19 +389,68 @@ class EconomyCog(commands.Cog):
                 title="ENVI PURCHASE DENIED",
                 reason="Requested item is not registered in the active exchange.",
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
-        total_price = item["price"] * quantity
+        current_stock = item["stock"]
 
-        try:
-            new_balance = remove_credits(user.id, total_price)
-        except ValueError as error:
+        if current_stock is not None:
+            current_stock = int(current_stock)
+
+            if current_stock <= 0:
+                embed = envi_error(
+                    title="ENVI PURCHASE DENIED",
+                    reason=f"**{item['name']}** is currently sold out.",
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+            if current_stock < quantity:
+                embed = envi_error(
+                    title="ENVI PURCHASE DENIED",
+                    reason=(
+                        f"Requested quantity exceeds available stock.\n"
+                        f"Item: **{item['name']}**\n"
+                        f"Available Stock: **{current_stock}**"
+                    ),
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+        total_price = item["price"] * quantity
+        current_balance = get_balance(user.id)
+
+        if current_balance < total_price:
             embed = envi_error(
                 title="ENVI PURCHASE DENIED",
-                reason=str(error),
+                reason=(
+                    f"Insufficient Nexus Credits.\n"
+                    f"Required: **{format_credits(total_price)}**\n"
+                    f"Available: **{format_credits(current_balance)}**"
+                ),
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        new_balance = remove_credits(user.id, total_price)
+
+        try:
+            remaining_stock = decrease_item_stock(
+                item_id=item["item_id"],
+                quantity=quantity,
+            )
+        except ValueError as error:
+            refunded_balance = add_credits(user.id, total_price)
+
+            embed = envi_error(
+                title="ENVI PURCHASE REFUNDED",
+                reason=(
+                    f"{str(error)}\n\n"
+                    f"Your payment was reversed.\n"
+                    f"Restored Balance: **{format_credits(refunded_balance)}**"
+                ),
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         add_item_to_inventory(
@@ -414,6 +466,8 @@ class EconomyCog(commands.Cog):
             reason=f"Purchased {quantity}x {item['name']}.",
         )
 
+        remaining_stock_text = format_stock(remaining_stock)
+
         await send_ledger_log(
             bot=interaction.client,
             title="ENVI LEDGER PURCHASE LOG",
@@ -421,8 +475,11 @@ class EconomyCog(commands.Cog):
                 f"Type: `{TRANSACTION_SHOP_PURCHASE}`\n"
                 f"Citizen: {user.mention}\n"
                 f"Item: **{item['name']}**\n"
+                f"Category: `{item['category']}`\n"
+                f"Rarity: `{item['rarity']}`\n"
                 f"Quantity: **{quantity}**\n"
                 f"Total: **{format_credits(total_price)}**\n"
+                f"Stock Remaining: **{remaining_stock_text}**\n"
                 f"Updated Balance: **{format_credits(new_balance)}**"
             ),
         )
@@ -432,13 +489,15 @@ class EconomyCog(commands.Cog):
             description=(
                 f"Citizen: {user.mention}\n"
                 f"Item: **{item['name']}**\n"
+                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
                 f"Quantity: **{quantity}**\n"
                 f"Total: **{format_credits(total_price)}**\n"
+                f"Stock Remaining: **{remaining_stock_text}**\n"
                 f"Updated Balance: **{format_credits(new_balance)}**"
             ),
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(
         name="inventory",
