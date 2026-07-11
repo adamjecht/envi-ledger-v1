@@ -6,62 +6,54 @@ from utils.embeds import envi_embed
 
 
 class HelpCog(commands.Cog):
+    """
+    Public help command for ENVI Ledger.
+    """
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(
         name="help",
-        description="View the ENVI Ledger command directory.",
+        description="View ENVI Ledger commands and features.",
     )
-    async def help_command(self, interaction: discord.Interaction):
+    async def help(self, interaction: discord.Interaction):
         embed = envi_embed(
-            title="ENVI LEDGER COMMAND DIRECTORY",
+            title="ENVI LEDGER HELP",
             description=(
-                "Civic economy interface for Nexus Credits, shop assets, "
-                "and staff-controlled financial records."
-            ),
-        )
-
-        embed.add_field(
-            name="Public Commands",
-            value=(
+                "**Citizen Commands**\n"
                 "`/balance` — View your Nexus Credit balance.\n"
-                "`/daily` — Claim the Civic Dividend.\n"
-                "`/work` — Complete a Shift Assignment for credits.\n"
+                "`/daily` — Claim your Civic Dividend.\n"
+                "`/work` — Complete a Shift Assignment for Nexus Credits.\n"
                 "`/pay` — Transfer Nexus Credits to another citizen.\n"
-                "`/shop` — View active Commercial Exchange items.\n"
-                "`/buy` — Purchase an active shop item.\n"
-                "`/inventory` — View registered owned items.\n"
-                "`/leaderboard` — View the top Nexus Credit balances.\n"
-                "`/help` — View this command directory."
-            ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="Admin Commands",
-            value=(
-                "`/admin status` — Check ENVI Ledger admin access.\n"
-                "`/admin addcredits` — Add credits to a citizen account.\n"
-                "`/admin removecredits` — Remove credits from a citizen account.\n"
-                "`/admin setbalance` — Set a citizen balance exactly.\n"
-                "`/admin additem` — Add a shop item.\n"
-                "`/admin edititem` — Edit or reactivate a shop item.\n"
+                "`/leaderboard` — View the top Nexus Credit holders.\n\n"
+                "**Commercial Exchange**\n"
+                "`/shop` — View active shop items.\n"
+                "`/shop category:` — Filter the shop by category.\n"
+                "`/buy` — Purchase an item from the shop.\n"
+                "`/inventory` — View owned items with category, rarity, use status, and type.\n"
+                "`/use` — Use an owned item from your inventory.\n\n"
+                "**Item Metadata**\n"
+                "Items may include category, rarity, stock, use behavior, and custom use messages.\n"
+                "Limited-stock items can sell out. Permanent items remain after use. "
+                "Consumable items are removed when used.\n\n"
+                "**Staff Commands**\n"
+                "`/admin addcredits` — Add credits to a citizen.\n"
+                "`/admin removecredits` — Remove credits from a citizen.\n"
+                "`/admin setbalance` — Set a citizen balance.\n"
+                "`/admin resetbalance` — Reset a citizen balance.\n"
+                "`/admin additem` — Create a shop item with metadata.\n"
+                "`/admin edititem` — Edit shop item price, metadata, status, or stock.\n"
                 "`/admin removeitem` — Deactivate a shop item.\n"
-                "`/admin transactions` — View recent user transaction records."
+                "`/admin transactions` — View recent citizen ledger activity.\n"
+                "`/admin status` — View bot maintenance/status information.\n"
+                "`/admin economy` — View economy-wide statistics.\n"
+                "`/admin economyreport` — Generate a SIN News Financial Pulse report.\n\n"
+                "**Ledger Notes**\n"
+                "ENVI logs major economy activity to the configured staff log channel. "
+                "All credits, purchases, transfers, item use, and admin actions should be treated "
+                "as ledger-visible civic activity."
             ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="Operational Notes",
-            value=(
-                "Admin commands require the configured ENVI Ledger Admin role.\n"
-                "Shop item removal deactivates items instead of deleting records.\n"
-                "Transactions are logged for audits, corrections, and dispute checks.\n"
-                "Nexus Credits are tracked as server economy data, not real currency."
-            ),
-            inline=False,
         )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)

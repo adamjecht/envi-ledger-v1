@@ -1,1532 +1,493 @@
-# ENVI Ledger
+ENVI Ledger
 
+ENVI Ledger is the economy-only Discord bot for the Exordium Nexus.
 
+It manages Nexus Credits, citizen balances, shop purchases, inventories, item usage, transaction logs, and staff-facing economy reports.
 
-ENVI Ledger is a Discord economy bot built for the Exordium Nexus server.
-
-
-
-It handles the server's v1 economy system using \*\*Nexus Credits\*\* (`₦C`), player balances, daily claims, work payouts, user transfers, shop items, inventories, admin tools, transaction records, staff log output, and basic maintenance tools.
-
-
-
-This is the economy-only version of the larger ENVI system.
-
-
-
-\---
-
-
-
-\## Core Identity
-
-
-
-\*\*Bot Name:\*\* ENVI Ledger  
-
-\*\*Currency:\*\* Nexus Credits  
-
-\*\*Currency Symbol:\*\* `₦C`  
-
-\*\*Primary Purpose:\*\* Discord server economy management  
-
-\*\*Database:\*\* SQLite  
-
-\*\*Language:\*\* Python  
-
-\*\*Discord Library:\*\* discord.py  
-
-
-
-ENVI Ledger is designed as a civic financial system for the Exordium Nexus, not a general-purpose money bot.
-
-
-
-\---
-
-
-
-\## Current Version
-
-
+Currency:
 
 ```text
-
-ENVI Ledger v1
-
+₦C — Nexus Credits
 ````
 
+---
 
-
-v1 focuses only on the core economy.
-
-
-
-It does not include businesses, taxes, property, banking, loans, crime systems, gambling, warrants, Black Badge fines, faction banks, crafting, auctions, or moderation tools.
-
-
-
-\---
-
-
-
-\## Completed Features
-
-
-
-\### Public Economy Commands
-
-
+## Current Version
 
 ```text
-
-/ping
-
-/balance
-
-/daily
-
-/work
-
-/pay
-
-/shop
-
-/buy
-
-/inventory
-
-/leaderboard
-
-/help
-
+Version: V1.5 Ledger Polish
+Status: Local development / testing
 ```
 
+V1.5 expands the original economy system with item metadata, inventory upgrades, usable items, limited stock, economy statistics, and SIN News economy reporting.
 
+---
 
-\### Admin Commands
+## Core Citizen Commands
 
+### `/balance`
 
+View your current Nexus Credit balance.
+
+### `/daily`
+
+Claim your Civic Dividend.
+
+### `/work`
+
+Complete a Shift Assignment for Nexus Credits.
+
+Current cooldown:
 
 ```text
-
-/admin status
-
-/admin addcredits
-
-/admin removecredits
-
-/admin setbalance
-
-/admin additem
-
-/admin edititem
-
-/admin removeitem
-
-/admin transactions
-
-/admin clearcooldowns
-
-/admin resetuser
-
+4 hours
 ```
 
+### `/pay`
 
+Transfer Nexus Credits to another citizen.
 
-\### Systems
+### `/leaderboard`
 
+View the top Nexus Credit holders.
 
+---
+
+## Commercial Exchange Commands
+
+### `/shop`
+
+View the ENVI Commercial Exchange.
+
+Shop items display:
 
 ```text
-
-SQLite database
-
-Automatic user account creation
-
-Nexus Credit balances
-
-Daily reward cooldowns
-
-Work payout cooldowns
-
-User-to-user transfers
-
-Shop item system
-
-Inventory system
-
-Transaction logging
-
-Admin role gate
-
-Staff log channel output
-
-Global command error handling
-
-Targeted cleanup / maintenance tools
-
+Name
+Price
+Category
+Rarity
+Stock
+Description
 ```
 
+### `/shop category:`
 
+Filter the shop by item category.
 
-\---
-
-
-
-\## Project Structure
-
-
+Current categories:
 
 ```text
-
-envi-ledger/
-
-├── bot.py
-
-├── requirements.txt
-
-├── README.md
-
-├── .env
-
-├── .env.example
-
-├── .gitignore
-
-│
-
-├── data/
-
-│   └── envi\_ledger.db
-
-│
-
-├── db/
-
-│   ├── \_\_init\_\_.py
-
-│   ├── schema.sql
-
-│   └── database.py
-
-│
-
-├── cogs/
-
-│   ├── \_\_init\_\_.py
-
-│   ├── economy.py
-
-│   ├── admin.py
-
-│   └── help.py
-
-│
-
-├── services/
-
-│   ├── \_\_init\_\_.py
-
-│   ├── economy\_service.py
-
-│   ├── transaction\_service.py
-
-│   ├── cooldown\_service.py
-
-│   ├── shop\_service.py
-
-│   ├── inventory\_service.py
-
-│   ├── log\_channel\_service.py
-
-│   └── maintenance\_service.py
-
-│
-
-├── utils/
-
-│   ├── \_\_init\_\_.py
-
-│   ├── constants.py
-
-│   ├── formatting.py
-
-│   ├── embeds.py
-
-│   ├── checks.py
-
-│   └── responses.py
-
-│
-
-└── logs/
-
+General
+Food & Drink
+Luxury
+Transit
+Access Passes
+Obsession Items
+Eclipse Items
+Foxy Delights Items
+Black Badge / Civic
+Collectibles
+Event Items
 ```
 
+### `/buy`
 
+Purchase an item from the ENVI Commercial Exchange.
 
-\---
+Limited-stock items reduce stock when purchased. Sold-out items cannot be bought.
 
+### `/inventory`
 
+View your owned items.
 
-\## Requirements
-
-
-
-\* Python 3.11 or newer recommended
-
-\* A Discord bot application
-
-\* A Discord test server / guild
-
-\* Bot token
-
-\* Guild ID
-
-\* Admin role ID
-
-\* Staff log channel ID
-
-
-
-Python packages:
-
-
+Inventory entries display:
 
 ```text
-
-discord.py
-
-python-dotenv
-
+Quantity
+Name
+Category
+Rarity
+Use Status
+Type
+Description
 ```
 
+### `/use`
 
+Use an owned item from your inventory.
 
-\---
+Usable item types:
 
+```text
+Consumable — removed from inventory after use
+Permanent — remains in inventory after use
+```
 
+Non-usable items may be collectibles, decorative items, or staff-controlled RP assets.
 
-\## Installation
+---
 
+## Item Metadata
 
+V1.5 shop items may include:
 
-Create and activate a virtual environment:
+```text
+category
+rarity
+usable
+consumable
+use_message
+stock
+```
 
+### Category
 
+Used to organize the shop.
+
+### Rarity
+
+Current rarity values:
+
+```text
+Common
+Uncommon
+Rare
+Luxury
+Restricted
+Exordium-Class
+```
+
+### Usable
+
+Determines whether the item can be used with `/use`.
+
+### Consumable
+
+Determines whether using the item removes one quantity from inventory.
+
+### Use Message
+
+Custom message displayed when the item is used.
+
+### Stock
+
+Controls limited item availability.
+
+```text
+NULL / blank = Unlimited
+0 = Sold Out
+Positive number = Remaining stock
+```
+
+---
+
+## Staff Commands
+
+All staff commands are grouped under:
+
+```text
+/admin
+```
+
+### `/admin addcredits`
+
+Add Nexus Credits to a citizen.
+
+### `/admin removecredits`
+
+Remove Nexus Credits from a citizen.
+
+### `/admin setbalance`
+
+Set a citizen balance.
+
+### `/admin resetbalance`
+
+Reset a citizen balance.
+
+### `/admin additem`
+
+Create a new shop item.
+
+Supported metadata:
+
+```text
+name
+price
+description
+category
+rarity
+stock
+```
+
+### `/admin edititem`
+
+Edit an existing shop item.
+
+Supported edits include:
+
+```text
+name
+price
+description
+active status
+category
+rarity
+stock
+```
+
+### `/admin removeitem`
+
+Deactivate a shop item without deleting historical records.
+
+### `/admin transactions`
+
+View recent ENVI Ledger transactions for a citizen.
+
+### `/admin status`
+
+View bot maintenance and status information.
+
+### `/admin economy`
+
+View economy-wide statistics.
+
+Includes:
+
+```text
+Total users
+Credits in circulation
+Highest balance
+Credits generated
+Credits removed
+Net economy change
+Shop purchases
+Shop spending
+Transfers
+Transfer volume
+Active shop items
+Limited stock items
+Sold out items
+Total inventory quantity held by citizens
+```
+
+### `/admin economyreport`
+
+Generate a SIN News Financial Pulse economy report.
+
+Default behavior is private.
+
+Use:
+
+```text
+public: True
+```
+
+to post the report publicly in the current channel.
+
+---
+
+## Logging
+
+ENVI Ledger sends major economy activity to the configured staff log channel.
+
+Logged activity includes:
+
+```text
+Admin credit actions
+Shop item creation/editing/deactivation
+Purchases
+Transfers
+Item use
+Economy-relevant activity
+```
+
+The log channel is configured with:
+
+```env
+LOG_CHANNEL_ID=
+```
+
+---
+
+## Environment Variables
+
+Create a `.env` file with:
+
+```env
+DISCORD_TOKEN=
+GUILD_ID=
+ADMIN_ROLE_ID=
+LOG_CHANNEL_ID=
+```
+
+For local testing, use a separate test bot and test server.
+
+Do not use the live Railway bot token locally while Railway is running.
+
+---
+
+## Local Development
+
+Install dependencies:
 
 ```powershell
-
-python -m venv .venv
-
-.\\.venv\\Scripts\\Activate.ps1
-
-```
-
-
-
-Install requirements:
-
-
-
-```powershell
-
 python -m pip install -r requirements.txt
-
 ```
 
-
-
-\---
-
-
-
-\## Environment Variables
-
-
-
-Create a `.env` file in the project root.
-
-
-
-Use this format:
-
-
-
-```env
-
-DISCORD\_TOKEN=your\_bot\_token\_here
-
-GUILD\_ID=your\_discord\_server\_id\_here
-
-ADMIN\_ROLE\_ID=your\_admin\_role\_id\_here
-
-LOG\_CHANNEL\_ID=your\_staff\_log\_channel\_id\_here
-
-```
-
-
-
-Do not use quotes.
-
-
-
-Do not add extra spaces.
-
-
-
-Correct:
-
-
-
-```env
-
-GUILD\_ID=123456789012345678
-
-```
-
-
-
-Incorrect:
-
-
-
-```env
-
-GUILD\_ID="123456789012345678"
-
-GUILD\_ID = 123456789012345678
-
-```
-
-
-
-\---
-
-
-
-\## Important Security Notes
-
-
-
-Never share your `.env` file.
-
-
-
-Never post your bot token in Discord, GitHub, screenshots, or support chats.
-
-
-
-If the token is exposed, reset it immediately in the Discord Developer Portal.
-
-
-
-The `.gitignore` file should protect:
-
-
-
-```text
-
-.env
-
-.venv/
-
-\_\_pycache\_\_/
-
-\*.pyc
-
-data/\*.db
-
-```
-
-
-
-\---
-
-
-
-\## Running the Bot
-
-
-
-From the project root:
-
-
+Run the bot:
 
 ```powershell
-
 python bot.py
-
 ```
 
+Recommended local setup:
 
-
-Expected startup output:
-
-
-
-```text
-
-Synced 11 slash command(s) to guild ...
-
-ENVI Ledger online as ...
-
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python bot.py
 ```
 
+If PowerShell blocks activation:
 
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
 
-Discord counts `/admin` as one top-level command group, even though it contains multiple subcommands.
+---
 
-
-
-\---
-
-
-
-\## Database
-
-
+## Database
 
 ENVI Ledger uses SQLite.
 
-
-
-Database file:
-
-
+Default local database path:
 
 ```text
-
-data/envi\_ledger.db
-
+data/envi_ledger.db
 ```
 
-
-
-Schema file:
-
-
+Railway deployment uses a persistent volume mounted at:
 
 ```text
-
-db/schema.sql
-
+/app/data
 ```
 
+Database setup runs automatically when the bot starts.
 
-
-Tables:
-
-
+V1.5 migrations are handled by:
 
 ```text
-
-users
-
-cooldowns
-
-shop\_items
-
-inventory
-
-transactions
-
+services/migration_service.py
 ```
 
-
-
-The database is automatically initialized when the bot starts.
-
-
-
-Default shop items are automatically seeded when the bot starts.
-
-
-
-\---
-
-
-
-\## Public Commands
-
-
-
-\### `/ping`
-
-
-
-Checks whether ENVI Ledger is online.
-
-
-
-\---
-
-
-
-\### `/balance`
-
-
-
-Shows your current Nexus Credit balance.
-
-
-
-\---
-
-
-
-\### `/daily`
-
-
-
-Claims the Civic Dividend.
-
-
-
-Default amount:
-
-
+Current migrated shop fields:
 
 ```text
-
-₦C 500
-
+category
+rarity
+usable
+consumable
+use_message
+stock
 ```
 
+---
 
+## Deployment Notes
 
-Default cooldown:
+The live bot is deployed on Railway.
 
+Before deploying:
 
+```powershell
+python -m py_compile bot.py cogs\admin.py cogs\economy.py cogs\help.py services\*.py utils\*.py db\database.py
+```
+
+Then test locally with the test bot before pushing changes.
+
+---
+
+## V1 Scope
+
+ENVI Ledger V1 focused on the basic economy system:
 
 ```text
-
-24 hours
-
-```
-
-
-
-\---
-
-
-
-\### `/work`
-
-
-
-Completes a Shift Assignment and pays a random amount.
-
-
-
-Default payout range:
-
-
-
-```text
-
-₦C 150 - ₦C 500
-
-```
-
-
-
-Default cooldown:
-
-
-
-```text
-
-1 hour
-
-```
-
-
-
-\---
-
-
-
-\### `/pay`
-
-
-
-Transfers Nexus Credits to another user.
-
-
-
-Rules:
-
-
-
-```text
-
-You cannot pay yourself.
-
-Amount must be greater than 0.
-
-Sender must have enough credits.
-
-```
-
-
-
-\---
-
-
-
-\### `/shop`
-
-
-
-Displays active shop items.
-
-
-
-\---
-
-
-
-\### `/buy`
-
-
-
-Purchases an active shop item.
-
-
-
-Rules:
-
-
-
-```text
-
-Item must exist.
-
-Quantity must be greater than 0.
-
-User must have enough credits.
-
-Purchased items are added to inventory.
-
-```
-
-
-
-\---
-
-
-
-\### `/inventory`
-
-
-
-Displays owned shop items.
-
-
-
-\---
-
-
-
-\### `/leaderboard`
-
-
-
-Displays the top Nexus Credit balances.
-
-
-
-Default limit:
-
-
-
-```text
-
-Top 10
-
-```
-
-
-
-\---
-
-
-
-\### `/help`
-
-
-
-Displays the ENVI Ledger command directory.
-
-
-
-\---
-
-
-
-\## Admin Commands
-
-
-
-Admin commands require the configured role from:
-
-
-
-```env
-
-ADMIN\_ROLE\_ID=
-
-```
-
-
-
-If the user does not have that role, ENVI denies access.
-
-
-
-\---
-
-
-
-\### `/admin status`
-
-
-
-Checks whether the user has ENVI Ledger admin access.
-
-
-
-\---
-
-
-
-\### `/admin addcredits`
-
-
-
-Adds Nexus Credits to a user.
-
-
-
-Also logs:
-
-
-
-```text
-
-Database transaction
-
-Staff log channel message
-
-```
-
-
-
-\---
-
-
-
-\### `/admin removecredits`
-
-
-
-Removes Nexus Credits from a user.
-
-
-
-Rules:
-
-
-
-```text
-
-Amount must be greater than 0.
-
-User must have enough credits.
-
-Balance cannot go below 0.
-
-```
-
-
-
-Also logs:
-
-
-
-```text
-
-Database transaction
-
-Staff log channel message
-
-```
-
-
-
-\---
-
-
-
-\### `/admin setbalance`
-
-
-
-Sets a user's balance to an exact amount.
-
-
-
-Rules:
-
-
-
-```text
-
-Balance cannot be negative.
-
-```
-
-
-
-Also logs:
-
-
-
-```text
-
-Database transaction
-
-Staff log channel message
-
-```
-
-
-
-\---
-
-
-
-\### `/admin additem`
-
-
-
-Creates a new active shop item.
-
-
-
-Rules:
-
-
-
-```text
-
-Item name cannot be empty.
-
-Price must be greater than 0.
-
-Description cannot be empty.
-
-Duplicate item names are blocked.
-
-```
-
-
-
-Also logs to the staff log channel.
-
-
-
-\---
-
-
-
-\### `/admin edititem`
-
-
-
-Edits an existing shop item.
-
-
-
-Can update:
-
-
-
-```text
-
-Name
-
-Price
-
-Description
-
-Active status
-
-```
-
-
-
-Also logs to the staff log channel.
-
-
-
-\---
-
-
-
-\### `/admin removeitem`
-
-
-
-Deactivates a shop item.
-
-
-
-This does not permanently delete the item.
-
-
-
-Reason:
-
-
-
-```text
-
-Old purchases and records should not break.
-
-```
-
-
-
-Also logs to the staff log channel.
-
-
-
-\---
-
-
-
-\### `/admin transactions`
-
-
-
-Shows recent transaction records for one user.
-
-
-
-Limit range:
-
-
-
-```text
-
-1 - 20
-
-```
-
-
-
-Discord blocks invalid limits before the command runs.
-
-
-
-\---
-
-
-
-\### `/admin clearcooldowns`
-
-
-
-Clears a user's cooldown records.
-
-
-
-Useful for testing:
-
-
-
-```text
-
-/daily
-
-/work
-
-```
-
-
-
-Also logs to the staff log channel.
-
-
-
-\---
-
-
-
-\### `/admin resetuser`
-
-
-
-Resets one user's test economy data.
-
-
-
-Requires:
-
-
-
-```text
-
-confirm: True
-
-```
-
-
-
-Clears:
-
-
-
-```text
-
+Nexus Credits
+User accounts
+Balance
+Daily claim
+Work payout
+Transfers
+Shop
+Purchases
 Inventory
-
-Cooldowns
-
-Transaction history
-
+Leaderboard
+Admin credit tools
+Transaction logs
+Persistent database
 ```
 
+---
 
+## V1.5 Scope
 
-Resets:
-
-
+ENVI Ledger V1.5 adds:
 
 ```text
-
-Balance to ₦C 0
-
+Shop categories
+Item rarity
+Improved shop display
+Improved inventory display
+Usable items
+Consumable/permanent item behavior
+Custom use messages
+Limited stock
+Stock-aware purchases
+Admin economy statistics
+SIN News economy report
+Updated help and documentation
 ```
 
+---
 
+## Not In V1.5
 
-Then creates a fresh `ADMIN\_RESET` transaction record.
-
-
-
-Also logs to the staff log channel.
-
-
-
-This command does not wipe the entire server database.
-
-
-
-\---
-
-
-
-\## Staff Log Channel
-
-
-
-Staff economy logs are sent to the channel configured by:
-
-
-
-```env
-
-LOG\_CHANNEL\_ID=
-
-```
-
-
-
-Logged events include:
-
-
+These features are intentionally reserved for later versions:
 
 ```text
-
-Player transfers
-
-Shop purchases
-
-Admin credit changes
-
-Admin shop changes
-
-Maintenance actions
-
-Unexpected command errors
-
-```
-
-
-
-The bot needs these permissions in the log channel:
-
-
-
-```text
-
-View Channel
-
-Send Messages
-
-Embed Links
-
-Read Message History
-
-```
-
-
-
-\---
-
-
-
-\## Error Handling
-
-
-
-ENVI Ledger has global slash command error handling.
-
-
-
-If a command crashes unexpectedly, users should receive:
-
-
-
-```text
-
-ENVI COMMAND FAILURE
-
-Reason: An unexpected system fault occurred. The incident has been logged.
-
-```
-
-
-
-The full traceback prints in PowerShell.
-
-
-
-A short error summary is sent to the staff log channel.
-
-
-
-\---
-
-
-
-\## Testing Checklist
-
-
-
-After setup, test these commands:
-
-
-
-```text
-
-/ping
-
-/balance
-
-/daily
-
-/work
-
-/pay
-
-/shop
-
-/buy
-
-/inventory
-
-/leaderboard
-
-/help
-
-```
-
-
-
-Admin test:
-
-
-
-```text
-
-/admin status
-
-/admin addcredits
-
-/admin removecredits
-
-/admin setbalance
-
-/admin additem
-
-/admin edititem
-
-/admin removeitem
-
-/admin transactions
-
-/admin clearcooldowns
-
-/admin resetuser
-
-```
-
-
-
-Also verify:
-
-
-
-```text
-
-Non-admin users are denied from /admin commands.
-
-Staff logs appear in #envi-ledger-logs.
-
-Cooldowns work.
-
-Maintenance tools work.
-
-Invalid transaction limits are blocked by Discord.
-
-```
-
-
-
-\---
-
-
-
-\## Default Shop Items
-
-
-
-The bot seeds default shop items on startup.
-
-
-
-Current default examples include:
-
-
-
-```text
-
-Eclipse Drink Voucher
-
-Obsession Perfume Sample
-
-Foxy Delights Dessert Box
-
-Black Cab Transit Pass
-
-Velvet Obelisk Visitor Pass
-
-Luxury Gift Box
-
-```
-
-
-
-Default shop items are inserted only if they do not already exist.
-
-
-
-\---
-
-
-
-\## V1 Limits
-
-
-
-ENVI Ledger v1 does not include:
-
-
-
-```text
-
-Business ownership
-
-Property ownership
-
+Businesses
+Properties
 Taxes
-
 Loans
-
-Interest
-
-Bank accounts
-
-Faction banks
-
-Crime systems
-
+Crime
 Gambling
-
 Warrants
-
 Black Badge fines
-
-Item trading
-
-Crafting
-
+Faction banks
+Influence
+Job levels
 Auctions
-
-Moderation
-
-Full web dashboard
-
-Hosting automation
-
+Item trading
+Crafting
+Dashboards
+Automatic scheduled payouts
 ```
 
+---
 
+## Project Identity
 
-These can be considered later versions.
+ENVI Ledger is part of the Exordium Nexus civic infrastructure.
 
-
-
-\---
-
-
-
-\## Recommended Launch Prep
-
-
-
-Before launch:
-
-
+In-world framing:
 
 ```text
-
-1\. Confirm .env values are correct.
-
-2\. Confirm the bot has the correct Discord permissions.
-
-3\. Confirm the admin role works.
-
-4\. Confirm #envi-ledger-logs receives log messages.
-
-5\. Reset test users if needed.
-
-6\. Remove junk test shop items.
-
-7\. Run the final testing checklist.
-
-8\. Back up the database if needed.
-
+ENVI tracks the credits.
+The Endless Reserve watches the flow.
+Sin City remembers the receipt.
 ```
-
-
-
-\---
-
-
-
-\## Useful PowerShell Commands
-
-
-
-Run bot:
-
-
-
-```powershell
-
-python bot.py
-
-```
-
-
-
-Compile all main files:
-
-
-
-```powershell
-
-python -m py\_compile bot.py cogs\\economy.py cogs\\admin.py cogs\\help.py services\\economy\_service.py services\\transaction\_service.py services\\cooldown\_service.py services\\shop\_service.py services\\inventory\_service.py services\\log\_channel\_service.py services\\maintenance\_service.py utils\\constants.py utils\\formatting.py utils\\embeds.py utils\\checks.py utils\\responses.py db\\database.py
-
-```
-
-
-
-Activate virtual environment:
-
-
-
-```powershell
-
-.\\.venv\\Scripts\\Activate.ps1
-
-```
-
-
-
-Install requirements:
-
-
-
-```powershell
-
-python -m pip install -r requirements.txt
-
-```
-
-
-
-\---
-
-
-
-\## Final Note
-
-
-
-ENVI Ledger v1 is meant to be stable, simple, and usable.
-
-
-
-The goal is not to build every possible economy system at once.
-
-
-
-The goal is to give the Exordium Nexus a working financial backbone first.
-
-
-
-Database logs are the archive.
-
-
-
-Staff channel logs are the watchtower.
-
-
-
-ENVI remembers.
-
-
 
 ````
-
-<<<<<<< HEAD
-=======
->>>>>>> 8de8884 (Prepare ENVI Ledger v1 for Railway deployment)
->>>>>>> 7830fe3 (Prepare ENVI Ledger v1 for Railway deployment)
