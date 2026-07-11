@@ -16,7 +16,7 @@ Currency:
 
 ```text
 Version: V1.5 Ledger Polish
-Status: Local development / testing
+Status: Live on Railway
 ```
 
 V1.5 expands the original economy system with item metadata, inventory upgrades, usable items, limited stock, economy statistics, and SIN News economy reporting.
