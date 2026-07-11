@@ -8,6 +8,7 @@ from services.economy_service import (
     remove_credits,
     set_balance,
 )
+from services.economy_stats_service import get_economy_stats
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
 from services.shop_service import (
@@ -525,6 +526,54 @@ async def admin_removeitem(
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@admin_group.command(
+    name="economy",
+    description="View ENVI Ledger economy-wide statistics.",
+)
+async def admin_economy(interaction: discord.Interaction):
+    if not await require_admin(interaction):
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    stats = get_economy_stats()
+
+    richest_user = stats["richest_user"]
+
+    if richest_user is None:
+        richest_text = "No registered citizens."
+    else:
+        richest_text = (
+            f"{richest_user['display_name']} "
+            f"({format_credits(richest_user['balance'])})"
+        )
+
+    embed = envi_embed(
+        title="ENVI ECONOMY STATUS",
+        description=(
+            "**Citizen Accounts**\n"
+            f"Registered Citizens: **{stats['total_users']}**\n"
+            f"Credits In Circulation: **{format_credits(stats['total_credits'])}**\n"
+            f"Current Highest Balance: **{richest_text}**\n\n"
+            "**Credit Flow**\n"
+            f"Credits Generated: **{format_credits(stats['credits_generated'])}**\n"
+            f"Credits Removed: **{format_credits(stats['credits_removed'])}**\n"
+            f"Net Economy Change: **{format_credits(stats['net_change'])}**\n\n"
+            "**Commerce**\n"
+            f"Shop Purchases: **{stats['shop_purchase_count']}**\n"
+            f"Shop Spending Total: **{format_credits(stats['shop_spending_total'])}**\n"
+            f"Player Transfers: **{stats['transfer_count']}**\n"
+            f"Transfer Volume: **{format_credits(stats['transfer_volume'])}**\n\n"
+            "**Exchange Inventory**\n"
+            f"Active Shop Items: **{stats['active_shop_items']}**\n"
+            f"Limited Stock Items: **{stats['limited_stock_items']}**\n"
+            f"Sold Out Items: **{stats['sold_out_items']}**\n"
+            f"Total Items Held By Citizens: **{stats['inventory_quantity_total']}**"
+        ),
+    )
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 @admin_group.command(
     name="transactions",
