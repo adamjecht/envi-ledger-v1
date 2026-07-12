@@ -199,6 +199,16 @@ class EconomyCog(commands.Cog):
             "You assisted with crowd flow near Eclipse before the bass swallowed the block.",
             "You checked ENVI access pings around Edenveil Gardens and found one camera politely refusing to work.",
             "You delivered a maintenance report to the Velvet Vista observation deck and tried not to stare at the city judging you.",
+            "Patriarch Maximillion assigned you to audit Obsession’s private client ledgers. Several purchases were emotional confessions with invoices attached.",
+            "Patriarch Maximillion requested your assistance at the Velvet Obelisk. You carried sealed documents and learned that silence is part of the uniform.",
+            "Patriarch Maximillion sent you to inspect Eclipse’s upper floor before opening. The lights behaved. The guests probably will not.",
+            "Patriarch Maximillion ordered a refinement sweep through the Luxuria Complex. Every mirror was polished until it looked judgmental.",
+            "Patriarch Maximillion had you prepare VIP access records for Paradise’s Edge. ENVI flagged three guests as desperate and one as entertaining.",
+            "Lucifer assigned you to review old Eden Afterlife records. Some names were crossed out. Others crossed themselves out.",
+            "Lucifer requested a legacy archive delivery to the Velvet Obelisk. The package felt older than the city and twice as patient.",
+            "Lucifer sent you to Edenveil Gardens to inspect a memorial seal. For once, the city was quiet enough to hear itself breathe.",
+            "Lucifer asked you to recover a misplaced family document. It was not lost. It was waiting to be respected.",
+            "Lucifer assigned you to clean up an old sanctuary chamber beneath the Nexus. Some dust is history. Some dust watches back.",
         ]
 
         assignment = random.choice(assignments)
