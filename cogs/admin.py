@@ -28,6 +28,10 @@ from utils.constants import (
     TRANSACTION_ADMIN_RESET,
     TRANSACTION_ADMIN_SET,
 )
+from utils.autocomplete import (
+    admin_edit_item_autocomplete,
+    admin_remove_item_autocomplete,
+)
 from utils.embeds import envi_embed, envi_error
 from utils.formatting import format_credits
 
@@ -408,6 +412,9 @@ async def admin_additem(
         for rarity in ITEM_RARITIES
     ],
 )
+@app_commands.autocomplete(
+    current_name=admin_edit_item_autocomplete,
+)
 async def admin_edititem(
     interaction: discord.Interaction,
     current_name: str,
@@ -481,6 +488,12 @@ async def admin_edititem(
 @admin_group.command(
     name="removeitem",
     description="Deactivate an item from the ENVI Commercial Exchange.",
+)
+@app_commands.describe(
+    name="Start typing the name of an active item.",
+)
+@app_commands.autocomplete(
+    name=admin_remove_item_autocomplete,
 )
 async def admin_removeitem(
     interaction: discord.Interaction,

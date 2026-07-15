@@ -409,6 +409,38 @@ def get_active_shop_items(category: str | None = None) -> list[dict]:
 
     return [dict(row) for row in rows]
 
+def get_all_shop_items() -> list[dict]:
+    """
+    Returns every registered shop item.
+
+    Active and inactive items are included so administrative commands
+    can inspect, edit, or manage the complete item catalog.
+    """
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                item_id,
+                name,
+                price,
+                description,
+                active,
+                category,
+                rarity,
+                usable,
+                consumable,
+                use_message,
+                stock
+            FROM shop_items
+            ORDER BY
+                active DESC,
+                name ASC
+            """
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
 
 def get_shop_item_by_name(item_name: str) -> dict | None:
     """

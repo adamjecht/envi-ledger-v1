@@ -41,6 +41,10 @@ from utils.constants import (
     WORK_MIN_AMOUNT,
 )
 from utils.embeds import envi_embed, envi_error
+from utils.autocomplete import (
+    buy_item_autocomplete,
+    use_item_autocomplete,
+)
 from utils.formatting import format_credits, format_seconds
 
 
@@ -394,6 +398,13 @@ class EconomyCog(commands.Cog):
         name="buy",
         description="Purchase an item from the ENVI Commercial Exchange.",
     )
+    @app_commands.describe(
+        item_name="Start typing the name of an available shop item.",
+        quantity="How many copies of the item you want to purchase.",
+    )
+    @app_commands.autocomplete(
+        item_name=buy_item_autocomplete,
+    )
     async def buy(
         self,
         interaction: discord.Interaction,
@@ -592,7 +603,10 @@ class EconomyCog(commands.Cog):
         description="Use an item from your ENVI inventory.",
     )
     @app_commands.describe(
-        item_name="The exact name of the item you want to use.",
+        item_name="Start typing the name of a usable item you own.",
+    )
+    @app_commands.autocomplete(
+        item_name=use_item_autocomplete,
     )
     async def use_item(
         self,
