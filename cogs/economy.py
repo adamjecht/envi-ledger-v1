@@ -46,6 +46,7 @@ from utils.autocomplete import (
     use_item_autocomplete,
 )
 from utils.formatting import format_credits, format_seconds
+from utils.shop_pagination import ShopPaginationView
 
 
 class EconomyCog(commands.Cog):
@@ -344,7 +345,10 @@ class EconomyCog(commands.Cog):
     )
     @app_commands.choices(
         category=[
-            app_commands.Choice(name=category, value=category)
+            app_commands.Choice(
+                name=category,
+                value=category,
+            )
             for category in SHOP_CATEGORIES
         ],
     )
@@ -353,9 +357,12 @@ class EconomyCog(commands.Cog):
         interaction: discord.Interaction,
         category: app_commands.Choice[str] | None = None,
     ):
-        await interaction.response.defer()
+        selected_category = (
+            category.value
+            if category is not None
+            else None
+        )
 
-        selected_category = category.value if category is not None else None
         items = get_active_shop_items(selected_category)
 
         if not items:
@@ -367,32 +374,30 @@ class EconomyCog(commands.Cog):
 
             embed = envi_error(
                 title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
-                reason=f"No active shop items are currently registered{category_text}.",
+                reason=(
+                    "No active shop items are currently registered"
+                    f"{category_text}."
+                ),
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
             return
 
-        item_lines = []
-
-        for item in items:
-            item_lines.append(
-                f"**{item['name']}** — {format_credits(item['price'])}\n"
-                f"Category: `{item['category']}` | Rarity: `{item['rarity']}` | "
-                f"Stock: `{format_stock(item['stock'])}`\n"
-                f"{item['description']}"
-            )
-
-        title = "ENVI COMMERCIAL EXCHANGE"
-
-        if selected_category is not None:
-            title = f"{title} — {selected_category}"
-
-        embed = envi_embed(
-            title=title,
-            description="\n\n".join(item_lines),
+        view = ShopPaginationView(
+            items=items,
+            user_id=interaction.user.id,
+            category=selected_category,
         )
 
-        await interaction.followup.send(embed=embed)
+        await interaction.response.send_message(
+            embed=view.build_embed(),
+            view=view,
+        )
+
+        view.message = await interaction.original_response()
 
     @app_commands.command(
         name="buy",
