@@ -51,6 +51,7 @@ from utils.autocomplete import (
 )
 from utils.formatting import format_credits, format_seconds
 from utils.shop_pagination import ShopPaginationView
+from utils.work_assignments import ADDITIONAL_WORK_ASSIGNMENTS
 
 
 class EconomyCog(commands.Cog):
@@ -173,16 +174,16 @@ class EconomyCog(commands.Cog):
             return
 
         assignments = [
-            "Completed a service shift at Eclipse.",
-            "Processed inventory for Obsession.",
-            "Delivered sealed documents through the Luxuria District.",
-            "Assisted with guest intake at Elysium Noir.",
-            "Catalogued luxury stock for Foxy Delights.",
-            "Filed civic receipts through an ENVI terminal.",
-            "Cleaned up a suspicious spill near Sinlink.",
-            "Escorted a nervous courier through Gutterlight.",
-            "Sorted late-night order slips at Afterglow Diner.",
-            "Verified guest manifests for Hotel Seraphine.",
+            "You completed a service shift at Eclipse. ENVI logged elevated bass levels and questionable decision-making.",
+            "You processed inventory for Obsession. ENVI detected several items being purchased for reasons customers refused to admit.",
+            "You delivered sealed documents through the Luxuria District. ENVI confirmed the seals were intact and your curiosity was poorly hidden.",
+            "You assisted with guest intake at Elysium Noir. ENVI noted that three guests lied elegantly and one lied poorly.",
+            "You catalogued rare arrivals at The Cozy Tome. ENVI flagged two books for movement without permission.",
+            "You filed civic receipts through an ENVI terminal. ENVI accepted your paperwork with minimal disappointment.",
+            "You cleaned up a suspicious spill near Sinlink. ENVI classified the substance as non-lethal, probably.",
+            "You escorted a nervous courier through Gutterlight. ENVI noted the courier became less nervous after you became more nervous.",
+            "You sorted late-night order slips at Afterglow Diner. ENVI detected grease, exhaustion, and civic resilience.",
+            "You verified guest manifests for Hotel Seraphine. ENVI found one alias, two scandals, and no desire to elaborate.",
             "You sorted Black Badge citations into 'paid,' 'ignored,' and 'politically inconvenient.'",
             "You cleaned glitter, blood, and someone’s ego off the Eclipse floor. ENVI refuses to rank them by toxicity.",
             "You delivered a cursed package across Sinlink. It hummed twice. You pretended that was normal.",
@@ -219,6 +220,8 @@ class EconomyCog(commands.Cog):
             "Lucifer asked you to recover a misplaced family document. It was not lost. It was waiting to be respected.",
             "Lucifer assigned you to clean up an old sanctuary chamber beneath the Nexus. Some dust is history. Some dust watches back.",
         ]
+
+        assignments.extend(ADDITIONAL_WORK_ASSIGNMENTS)
 
         assignment = random.choice(assignments)
         payout = random.randint(WORK_MIN_AMOUNT, WORK_MAX_AMOUNT)
