@@ -17,6 +17,7 @@ from services.shop_service import (
     create_shop_item,
     deactivate_shop_item,
     format_stock,
+    restock_limited_item,
     update_shop_item,
 )
 from services.transaction_service import get_recent_transactions, log_transaction
@@ -33,6 +34,7 @@ from utils.autocomplete import (
     admin_edit_item_autocomplete,
     admin_iteminfo_autocomplete,
     admin_remove_item_autocomplete,
+    admin_restock_item_autocomplete,
 )
 from utils.embeds import envi_embed, envi_error
 from utils.formatting import format_credits
@@ -710,6 +712,90 @@ async def admin_iteminfo(
             f"Last Updated: `{item['updated_at']}`"
         ),
         inline=False,
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_group.command(
+    name="restock",
+    description="Add stock to a limited ENVI Commercial Exchange item.",
+)
+@app_commands.describe(
+    item_name="Start typing the name of a limited-stock item.",
+    quantity="The amount of stock to add.",
+)
+@app_commands.autocomplete(
+    item_name=admin_restock_item_autocomplete,
+)
+async def admin_restock(
+    interaction: discord.Interaction,
+    item_name: str,
+    quantity: int,
+):
+    if not await require_admin(interaction):
+        return
+
+    try:
+        item = restock_limited_item(
+            item_name=item_name,
+            quantity=quantity,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ADMIN RESTOCK DENIED",
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    status = (
+        "Active"
+        if int(item["active"]) == 1
+        else "Inactive"
+    )
+
+    inactive_note = (
+        ""
+        if int(item["active"]) == 1
+        else (
+            "\n\n"
+            "**Notice:** This item remains inactive. "
+            "Restocking does not reactivate it."
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN SHOP LOG",
+        description=(
+            "Type: `ADMIN_SHOP_RESTOCK`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Item: **{item['name']}**\n"
+            f"Item ID: `{item['item_id']}`\n"
+            f"Status: **{status}**\n"
+            f"Previous Stock: **{item['old_stock']}**\n"
+            f"Quantity Added: **{item['added_quantity']}**\n"
+            f"Updated Stock: **{item['new_stock']}**"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ADMIN ITEM RESTOCKED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Item: **{item['name']}**\n"
+            f"Status: **{status}**\n"
+            f"Previous Stock: **{item['old_stock']}**\n"
+            f"Quantity Added: **{item['added_quantity']}**\n"
+            f"Updated Stock: **{item['new_stock']}**"
+            f"{inactive_note}"
+        ),
     )
 
     await interaction.response.send_message(

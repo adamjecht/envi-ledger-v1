@@ -284,7 +284,7 @@ async def admin_restock_item_autocomplete(
     current: str,
 ) -> list[app_commands.Choice[str]]:
     """
-    Suggests limited-stock items for the future /admin restock command.
+    Suggests limited-stock items for /admin restock.
 
     Sold-out and inactive limited-stock items remain visible.
     Unlimited-stock items are excluded.

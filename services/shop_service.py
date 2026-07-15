@@ -250,6 +250,112 @@ def decrease_item_stock(item_id: int, quantity: int) -> int | None:
 
     return remaining_stock
 
+def restock_limited_item(
+    item_name: str,
+    quantity: int,
+) -> dict:
+    """
+    Adds stock to an existing limited-stock item.
+
+    Active and inactive items may be restocked.
+    Restocking does not change the item's active status.
+
+    Returns the updated item along with:
+    - old_stock
+    - added_quantity
+    - new_stock
+    """
+
+    clean_item_name = item_name.strip()
+
+    if not clean_item_name:
+        raise ValueError("Item name cannot be empty.")
+
+    if quantity <= 0:
+        raise ValueError("Restock quantity must be greater than zero.")
+
+    with get_connection() as connection:
+        item_row = connection.execute(
+            """
+            SELECT
+                item_id,
+                name,
+                price,
+                description,
+                category,
+                rarity,
+                usable,
+                consumable,
+                use_message,
+                stock,
+                active
+            FROM shop_items
+            WHERE LOWER(name) = LOWER(?)
+            """,
+            (clean_item_name,),
+        ).fetchone()
+
+        if item_row is None:
+            raise ValueError("Requested item is not registered.")
+
+        if item_row["stock"] is None:
+            raise ValueError(
+                "Unlimited-stock items cannot be restocked."
+            )
+
+        old_stock = int(item_row["stock"])
+        new_stock = old_stock + quantity
+
+        connection.execute(
+            """
+            UPDATE shop_items
+            SET
+                stock = ?,
+                updated_at = ?
+            WHERE item_id = ?
+            """,
+            (
+                new_stock,
+                utc_now(),
+                item_row["item_id"],
+            ),
+        )
+
+        connection.commit()
+
+        updated_row = connection.execute(
+            """
+            SELECT
+                item_id,
+                name,
+                price,
+                description,
+                category,
+                rarity,
+                usable,
+                consumable,
+                use_message,
+                stock,
+                active
+            FROM shop_items
+            WHERE item_id = ?
+            """,
+            (item_row["item_id"],),
+        ).fetchone()
+
+    if updated_row is None:
+        raise RuntimeError(
+            "Item stock was updated, but the item could not be retrieved."
+        )
+
+    updated_item = dict(updated_row)
+
+    updated_item["old_stock"] = old_stock
+    updated_item["added_quantity"] = quantity
+    updated_item["new_stock"] = new_stock
+
+    return updated_item
+
 
 def seed_default_shop_items() -> None:
     """
