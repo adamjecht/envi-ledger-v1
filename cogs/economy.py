@@ -24,6 +24,10 @@ from services.inventory_service import (
     get_user_inventory,
     get_user_inventory_item_by_name,
 )
+from services.item_use_guidance_service import (
+    build_non_usable_item_reason,
+    build_unknown_item_use_reason,
+)
 from services.log_channel_service import send_ledger_log
 from services.transaction_service import log_transaction
 from utils.constants import (
@@ -618,7 +622,10 @@ class EconomyCog(commands.Cog):
         interaction: discord.Interaction,
         item_name: str,
     ):
-        ensure_user(interaction.user.id, interaction.user.display_name)
+        ensure_user(
+            interaction.user.id,
+            interaction.user.display_name,
+        )
 
         item = get_user_inventory_item_by_name(
             user_id=interaction.user.id,
@@ -626,26 +633,40 @@ class EconomyCog(commands.Cog):
         )
 
         if item is None:
+            guidance_reason = build_unknown_item_use_reason(
+                user_id=interaction.user.id,
+                requested_name=item_name,
+            )
+
             embed = envi_error(
                 title="ENVI ITEM USE DENIED",
-                reason="That item was not found in your inventory.",
+                reason=guidance_reason,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
             return
 
         if int(item["usable"]) != 1:
+            guidance_reason = build_non_usable_item_reason(
+                user_id=interaction.user.id,
+                item=item,
+            )
+
             embed = envi_error(
                 title="ENVI ITEM USE DENIED",
-                reason=(
-                    f"**{item['name']}** is registered as a non-usable item. "
-                    "It may be collectible, decorative, or reserved for staff-controlled scenes."
-                ),
+                reason=guidance_reason,
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
             return
 
         is_consumable = int(item["consumable"]) == 1
-
         remaining_quantity = int(item["quantity"])
 
         if is_consumable:
@@ -660,22 +681,32 @@ class EconomyCog(commands.Cog):
                     title="ENVI ITEM USE DENIED",
                     reason=str(error),
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                await interaction.response.send_message(
+                    embed=embed,
+                    ephemeral=True,
+                )
                 return
 
         use_message = item["use_message"]
 
         if use_message is None:
             use_message = (
-                f"**{item['name']}** used. ENVI has recorded the action."
+                f"**{item['name']}** used. "
+                "ENVI has recorded the action."
             )
 
-        inventory_update = (
-            f"One **{item['name']}** was consumed.\n"
-            f"Remaining Quantity: **{remaining_quantity}**"
-            if is_consumable
-            else f"**{item['name']}** remains in your inventory."
-        )
+        if is_consumable:
+            inventory_update = (
+                f"One **{item['name']}** was consumed.\n"
+                f"Remaining Quantity: **{remaining_quantity}**"
+            )
+        else:
+            inventory_update = (
+                f"**{item['name']}** is a permanent item and "
+                "remains in your inventory.\n"
+                f"Current Quantity: **{remaining_quantity}**"
+            )
 
         await send_ledger_log(
             bot=interaction.client,
@@ -685,7 +716,8 @@ class EconomyCog(commands.Cog):
                 f"Item: **{item['name']}**\n"
                 f"Category: `{item['category']}`\n"
                 f"Rarity: `{item['rarity']}`\n"
-                f"Consumable: **{'Yes' if is_consumable else 'No'}**\n"
+                f"Consumable: "
+                f"**{'Yes' if is_consumable else 'No'}**\n"
                 f"Remaining Quantity: **{remaining_quantity}**"
             ),
         )
@@ -695,14 +727,17 @@ class EconomyCog(commands.Cog):
             description=(
                 f"User: {interaction.user.mention}\n"
                 f"Item: **{item['name']}**\n"
-                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n\n"
+                f"Category: `{item['category']}` | "
+                f"Rarity: `{item['rarity']}`\n\n"
                 f"{use_message}\n\n"
-                f"**Inventory Update**\n"
+                "**Inventory Update**\n"
                 f"{inventory_update}"
             ),
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=embed,
+        )
 
     @app_commands.command(
         name="leaderboard",
