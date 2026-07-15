@@ -10,6 +10,7 @@ from services.economy_service import (
 )
 from services.economy_stats_service import get_economy_stats
 from services.economy_report_service import build_economy_report
+from services.item_audit_service import get_item_audit
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
 from services.shop_service import (
@@ -30,6 +31,7 @@ from utils.constants import (
 )
 from utils.autocomplete import (
     admin_edit_item_autocomplete,
+    admin_iteminfo_autocomplete,
     admin_remove_item_autocomplete,
 )
 from utils.embeds import envi_embed, envi_error
@@ -52,6 +54,28 @@ def format_transaction_amount(amount: int) -> str:
         return f"-{format_credits(abs(amount))}"
 
     return format_credits(amount)
+
+def format_audit_text(
+    value: object,
+    fallback: str = "Not registered.",
+    limit: int = 1024,
+) -> str:
+    """
+    Formats optional item text safely for a Discord embed field.
+    """
+
+    if value is None:
+        return fallback
+
+    text = str(value).strip()
+
+    if not text:
+        return fallback
+
+    if len(text) <= limit:
+        return text
+
+    return f"{text[: limit - 3]}..."
 
 
 async def require_admin(interaction: discord.Interaction) -> bool:
@@ -540,6 +564,158 @@ async def admin_removeitem(
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@admin_group.command(
+    name="iteminfo",
+    description="Inspect a complete ENVI Commercial Exchange item record.",
+)
+@app_commands.describe(
+    item_name="Start typing the name of any active or inactive item.",
+)
+@app_commands.autocomplete(
+    item_name=admin_iteminfo_autocomplete,
+)
+async def admin_iteminfo(
+    interaction: discord.Interaction,
+    item_name: str,
+):
+    if not await require_admin(interaction):
+        return
+
+    item = get_item_audit(item_name)
+
+    if item is None:
+        embed = envi_error(
+            title="ENVI ADMIN ITEM AUDIT DENIED",
+            reason="Requested item is not registered.",
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    active_status = (
+        "Active"
+        if int(item["active"]) == 1
+        else "Inactive"
+    )
+
+    usable_status = (
+        "Yes"
+        if int(item["usable"]) == 1
+        else "No"
+    )
+
+    consumable_status = (
+        "Yes"
+        if int(item["consumable"]) == 1
+        else "No"
+    )
+
+    if int(item["usable"]) != 1:
+        item_behavior = "Non-Usable / Collectible"
+    elif int(item["consumable"]) == 1:
+        item_behavior = "Consumable"
+    else:
+        item_behavior = "Permanent"
+
+    description_text = format_audit_text(
+        item["description"],
+        fallback="No description registered.",
+    )
+
+    use_message_text = format_audit_text(
+        item["use_message"],
+        fallback="No custom use message registered.",
+    )
+
+    embed = envi_embed(
+        title="ENVI ADMIN ITEM AUDIT",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Complete record for **{item['name']}**."
+        ),
+    )
+
+    embed.add_field(
+        name="Identity",
+        value=(
+            f"Item ID: `{item['item_id']}`\n"
+            f"Name: **{item['name']}**\n"
+            f"Status: **{active_status}**\n"
+            "Seller: **ENVI Commercial Exchange** "
+            "(`System-Owned`)"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Commerce",
+        value=(
+            f"Price: **{format_credits(item['price'])}**\n"
+            f"Category: `{item['category']}`\n"
+            f"Rarity: `{item['rarity']}`\n"
+            f"Stock: **{format_stock(item['stock'])}**"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Use Registration",
+        value=(
+            f"Usable: **{usable_status}**\n"
+            f"Consumable: **{consumable_status}**\n"
+            f"Behavior: **{item_behavior}**"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Description",
+        value=description_text,
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Use Message",
+        value=use_message_text,
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Ownership",
+        value=(
+            f"Citizens Holding: **{item['holder_count']}**\n"
+            f"Total Units Currently Held: **{item['total_owned']}**"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Recorded Purchase Activity",
+        value=(
+            f"Purchase Transactions: **{item['purchase_count']}**\n"
+            f"Units Purchased: **{item['units_purchased']}**\n"
+            "_Statistics are matched to the item's current "
+            "registered name._"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Record Timestamps",
+        value=(
+            f"Created: `{item['created_at']}`\n"
+            f"Last Updated: `{item['updated_at']}`"
+        ),
+        inline=False,
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_group.command(
     name="economy",
