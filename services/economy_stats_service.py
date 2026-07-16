@@ -8,6 +8,7 @@ from utils.constants import (
     TRANSACTION_SHOP_PURCHASE,
     TRANSACTION_TRANSFER_SENT,
     TRANSACTION_WORK,
+    TRANSACTION_COMMERCIAL_SHOP_PURCHASE,
     ORGANIZATION_TRANSACTION_ADMIN_REVENUE
 )
 
@@ -27,6 +28,10 @@ CREDIT_REMOVING_TYPES = (
     TRANSACTION_ADMIN_RESET,
 )
 
+SHOP_PURCHASE_TYPES = (
+    TRANSACTION_SHOP_PURCHASE,
+    TRANSACTION_COMMERCIAL_SHOP_PURCHASE,
+)
 
 def _first_value(row, default=0):
     """
@@ -147,20 +152,24 @@ def get_economy_stats() -> dict:
                 """
                 SELECT COUNT(*)
                 FROM transactions
-                WHERE type = ?
+                WHERE type IN (?, ?)
                 """,
-                (TRANSACTION_SHOP_PURCHASE,),
+                SHOP_PURCHASE_TYPES,
             ).fetchone()
         )
 
         shop_spending_total = _first_value(
             connection.execute(
                 """
-                SELECT COALESCE(SUM(ABS(amount)), 0)
+                SELECT COALESCE(
+                    SUM(ABS(amount)),
+                    0
+                )
                 FROM transactions
-                WHERE type = ? AND amount < 0
+                WHERE type IN (?, ?)
+                AND amount < 0
                 """,
-                (TRANSACTION_SHOP_PURCHASE,),
+                SHOP_PURCHASE_TYPES,
             ).fetchone()
         )
 

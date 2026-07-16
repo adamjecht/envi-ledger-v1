@@ -1,6 +1,13 @@
 from db.database import get_connection
-from utils.constants import TRANSACTION_SHOP_PURCHASE
+from utils.constants import (
+    TRANSACTION_COMMERCIAL_SHOP_PURCHASE,
+    TRANSACTION_SHOP_PURCHASE,
+)
 
+SHOP_PURCHASE_TRANSACTION_TYPES = (
+    TRANSACTION_SHOP_PURCHASE,
+    TRANSACTION_COMMERCIAL_SHOP_PURCHASE,
+)
 
 PURCHASE_REASON_PREFIX = "Purchased "
 PURCHASE_ITEM_SEPARATOR = "x "
@@ -32,7 +39,9 @@ def _parse_purchase_quantity(
     if not separator:
         return None
 
-    if purchased_item != f"{item_name}.":
+    if not purchased_item.startswith(
+        f"{item_name}."
+    ):
         return None
 
     quantity_text = quantity_text.strip()
@@ -115,12 +124,14 @@ def get_item_audit(item_name: str) -> dict | None:
 
         purchase_rows = connection.execute(
             """
-            SELECT reason
+            SELECT
+                type,
+                reason
             FROM transactions
-            WHERE type = ?
+            WHERE type IN (?, ?)
             ORDER BY transaction_id ASC
             """,
-            (TRANSACTION_SHOP_PURCHASE,),
+            SHOP_PURCHASE_TRANSACTION_TYPES,
         ).fetchall()
 
     purchase_count = 0

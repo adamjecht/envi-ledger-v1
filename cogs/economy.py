@@ -13,13 +13,11 @@ from services.economy_service import (
     remove_credits,
 )
 from services.shop_service import (
-    decrease_item_stock,
+    format_item_seller,
     format_stock,
     get_active_shop_items,
-    get_shop_item_by_name,
 )
 from services.inventory_service import (
-    add_item_to_inventory,
     decrease_item_quantity,
     get_user_inventory,
     get_user_inventory_item_by_name,
@@ -27,6 +25,9 @@ from services.inventory_service import (
 from services.item_use_guidance_service import (
     build_non_usable_item_reason,
     build_unknown_item_use_reason,
+)
+from services.purchase_service import (
+    purchase_shop_item,
 )
 from services.log_channel_service import send_ledger_log
 from services.transaction_service import log_transaction
@@ -36,7 +37,6 @@ from utils.constants import (
     LEADERBOARD_LIMIT,
     SHOP_CATEGORIES,
     TRANSACTION_DAILY,
-    TRANSACTION_SHOP_PURCHASE,
     TRANSACTION_TRANSFER_RECEIVED,
     TRANSACTION_TRANSFER_SENT,
     TRANSACTION_WORK,
@@ -408,11 +408,20 @@ class EconomyCog(commands.Cog):
 
     @app_commands.command(
         name="buy",
-        description="Purchase an item from the ENVI Commercial Exchange.",
+        description=(
+            "Purchase an item from the "
+            "ENVI Commercial Exchange."
+        ),
     )
     @app_commands.describe(
-        item_name="Start typing the name of an available shop item.",
-        quantity="How many copies of the item you want to purchase.",
+        item_name=(
+            "Start typing the name of an "
+            "available shop item."
+        ),
+        quantity=(
+            "How many copies of the item "
+            "you want to purchase."
+        ),
     )
     @app_commands.autocomplete(
         item_name=buy_item_autocomplete,
@@ -432,113 +441,92 @@ class EconomyCog(commands.Cog):
             display_name=user.display_name,
         )
 
-        if quantity <= 0:
-            embed = envi_error(
-                title="ENVI PURCHASE DENIED",
-                reason="Quantity must be greater than zero.",
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
-
-        item = get_shop_item_by_name(item_name)
-
-        if item is None:
-            embed = envi_error(
-                title="ENVI PURCHASE DENIED",
-                reason="Requested item is not registered in the active exchange.",
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
-
-        current_stock = item["stock"]
-
-        if current_stock is not None:
-            current_stock = int(current_stock)
-
-            if current_stock <= 0:
-                embed = envi_error(
-                    title="ENVI PURCHASE DENIED",
-                    reason=f"**{item['name']}** is currently sold out.",
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-
-            if current_stock < quantity:
-                embed = envi_error(
-                    title="ENVI PURCHASE DENIED",
-                    reason=(
-                        f"Requested quantity exceeds available stock.\n"
-                        f"Item: **{item['name']}**\n"
-                        f"Available Stock: **{current_stock}**"
-                    ),
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-
-        total_price = item["price"] * quantity
-        current_balance = get_balance(user.id)
-
-        if current_balance < total_price:
-            embed = envi_error(
-                title="ENVI PURCHASE DENIED",
-                reason=(
-                    f"Insufficient Nexus Credits.\n"
-                    f"Required: **{format_credits(total_price)}**\n"
-                    f"Available: **{format_credits(current_balance)}**"
-                ),
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
-
-        new_balance = remove_credits(user.id, total_price)
-
         try:
-            remaining_stock = decrease_item_stock(
-                item_id=item["item_id"],
+            result = purchase_shop_item(
+                user_id=user.id,
+                item_name=item_name,
                 quantity=quantity,
             )
-        except ValueError as error:
-            refunded_balance = add_credits(user.id, total_price)
-
+        except (ValueError, RuntimeError) as error:
             embed = envi_error(
-                title="ENVI PURCHASE REFUNDED",
-                reason=(
-                    f"{str(error)}\n\n"
-                    f"Your payment was reversed.\n"
-                    f"Restored Balance: **{format_credits(refunded_balance)}**"
-                ),
+                title="ENVI PURCHASE DENIED",
+                reason=str(error),
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(
+                embed=embed,
+                ephemeral=True,
+            )
             return
 
-        add_item_to_inventory(
-            user_id=user.id,
-            item_id=item["item_id"],
-            quantity=quantity,
+        item = result["item"]
+        personal_transaction = result[
+            "personal_transaction"
+        ]
+        organization_transaction = result[
+            "organization_transaction"
+        ]
+        seller_organization = result[
+            "seller_organization"
+        ]
+
+        seller_text = format_item_seller(
+            item
+        )
+        remaining_stock_text = format_stock(
+            result["remaining_stock"]
         )
 
-        log_transaction(
-            user_id=user.id,
-            transaction_type=TRANSACTION_SHOP_PURCHASE,
-            amount=-total_price,
-            reason=f"Purchased {quantity}x {item['name']}.",
-        )
-
-        remaining_stock_text = format_stock(remaining_stock)
+        if seller_organization is None:
+            settlement_type = (
+                "System Exchange Credit Sink"
+            )
+            seller_finance_log = (
+                "Seller Balance: `Not Applicable`\n"
+                "Organization Transaction: `None`"
+            )
+        else:
+            settlement_type = (
+                "Organization Commercial Transfer"
+            )
+            seller_finance_log = (
+                "Seller Previous Balance: "
+                f"**{format_credits(result['seller_balance_before'])}**\n"
+                "Seller Updated Balance: "
+                f"**{format_credits(seller_organization['balance'])}**\n"
+                "Organization Transaction ID: "
+                f"`{organization_transaction['organization_transaction_id']}`\n"
+                "Organization Transaction Type: "
+                f"`{organization_transaction['transaction_type']}`"
+            )
 
         await send_ledger_log(
             bot=interaction.client,
             title="ENVI LEDGER PURCHASE LOG",
             description=(
-                f"Type: `{TRANSACTION_SHOP_PURCHASE}`\n"
+                "Personal Transaction Type: "
+                f"`{personal_transaction['type']}`\n"
+                f"Reference: `{result['reference_id']}`\n"
+                f"Settlement: **{settlement_type}**\n"
                 f"Citizen: {user.mention}\n"
+                f"Citizen ID: `{user.id}`\n"
+                f"Item ID: `{item['item_id']}`\n"
                 f"Item: **{item['name']}**\n"
+                f"Seller: **{seller_text}**\n"
                 f"Category: `{item['category']}`\n"
                 f"Rarity: `{item['rarity']}`\n"
-                f"Quantity: **{quantity}**\n"
-                f"Total: **{format_credits(total_price)}**\n"
+                f"Quantity: **{result['quantity']}**\n"
+                f"Unit Price: **{format_credits(item['price'])}**\n"
+                f"Total: **{format_credits(result['total_price'])}**\n"
+                "Buyer Previous Balance: "
+                f"**{format_credits(result['user_balance_before'])}**\n"
+                "Buyer Updated Balance: "
+                f"**{format_credits(result['user']['balance'])}**\n"
                 f"Stock Remaining: **{remaining_stock_text}**\n"
-                f"Updated Balance: **{format_credits(new_balance)}**"
+                "Inventory Quantity: "
+                f"**{result['inventory_quantity']}**\n"
+                "Personal Transaction ID: "
+                f"`{personal_transaction['transaction_id']}`\n"
+                f"{seller_finance_log}"
             ),
         )
 
@@ -547,15 +535,23 @@ class EconomyCog(commands.Cog):
             description=(
                 f"Citizen: {user.mention}\n"
                 f"Item: **{item['name']}**\n"
-                f"Category: `{item['category']}` | Rarity: `{item['rarity']}`\n"
-                f"Quantity: **{quantity}**\n"
-                f"Total: **{format_credits(total_price)}**\n"
+                f"Seller: **{seller_text}**\n"
+                f"Category: `{item['category']}`"
+                f" | Rarity: `{item['rarity']}`\n"
+                f"Quantity: **{result['quantity']}**\n"
+                f"Total: **{format_credits(result['total_price'])}**\n"
                 f"Stock Remaining: **{remaining_stock_text}**\n"
-                f"Updated Balance: **{format_credits(new_balance)}**"
+                "Inventory Quantity: "
+                f"**{result['inventory_quantity']}**\n"
+                "Updated Balance: "
+                f"**{format_credits(result['user']['balance'])}**\n"
+                f"Reference: `{result['reference_id']}`"
             ),
         )
 
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(
+            embed=embed
+        )
 
     @app_commands.command(
         name="inventory",
