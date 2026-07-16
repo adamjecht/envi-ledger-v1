@@ -11,10 +11,14 @@ from services.organization_membership_service import (
 from utils.constants import (
     ORGANIZATION_DEPOSIT_REFERENCE_PREFIX,
     ORGANIZATION_PERMISSION_DEPOSIT,
+    ORGANIZATION_PERMISSION_PAY_USER,
     ORGANIZATION_REFERENCE_ID_MAX_LENGTH,
     ORGANIZATION_TRANSACTION_MEMBER_DEPOSIT,
     ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH,
+    ORGANIZATION_TRANSACTION_USER_PAYMENT,
+    ORGANIZATION_USER_PAYMENT_REFERENCE_PREFIX,
     TRANSACTION_ORGANIZATION_DEPOSIT,
+    TRANSACTION_ORGANIZATION_USER_PAYMENT_RECEIVED,
 )
 
 
@@ -110,6 +114,89 @@ def _build_deposit_reference_id() -> str:
 
     return reference_id
 
+def _validate_payment_amount(
+    amount: object,
+) -> int:
+    """
+    Validates a positive whole-credit organization payment.
+    """
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, int)
+        or amount <= 0
+    ):
+        raise ValueError(
+            "Payment amount must be greater than zero."
+        )
+
+    return amount
+
+
+def _validate_boolean(
+    value: object,
+    field_name: str,
+) -> bool:
+    """
+    Validates a strict Boolean value.
+    """
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"{field_name} must be True or False."
+        )
+
+    return value
+
+
+def _clean_payment_reason(
+    reason: object,
+) -> str:
+    """
+    Validates the required reason for an organization payment.
+    """
+    if not isinstance(reason, str):
+        raise ValueError(
+            "Payment reason must be text."
+        )
+
+    clean_reason = reason.strip()
+
+    if not clean_reason:
+        raise ValueError(
+            "Payment reason cannot be empty."
+        )
+
+    if (
+        len(clean_reason)
+        > ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH
+    ):
+        raise ValueError(
+            "Payment reason cannot exceed "
+            f"{ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH} "
+            "characters."
+        )
+
+    return clean_reason
+
+
+def _build_user_payment_reference_id() -> str:
+    """
+    Creates a unique reference shared by both payment records.
+    """
+    reference_id = (
+        f"{ORGANIZATION_USER_PAYMENT_REFERENCE_PREFIX}-"
+        f"{uuid.uuid4().hex.upper()}"
+    )
+
+    if (
+        len(reference_id)
+        > ORGANIZATION_REFERENCE_ID_MAX_LENGTH
+    ):
+        raise RuntimeError(
+            "Generated organization payment reference exceeds "
+            "the supported reference length."
+        )
+
+    return reference_id
 
 def _get_user_row(
     connection: sqlite3.Connection,
@@ -615,5 +702,363 @@ def deposit_user_funds_to_organization(
         ),
         "organization_transaction": dict(
             organization_transaction_row
+        ),
+    }
+
+def pay_organization_funds_to_user(
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    recipient_user_id: int,
+    recipient_is_bot: bool,
+    amount: int,
+    reason: str,
+) -> dict:
+    """
+    Atomically pays one registered user from an organization.
+
+    The following operations succeed or fail together:
+
+    - Organization balance decreases
+    - Recipient personal balance increases
+    - Recipient personal transaction is recorded
+    - Organization transaction is recorded
+
+    Returns:
+
+    - reference_id
+    - actor
+    - recipient
+    - organization
+    - membership
+    - recipient_transaction
+    - organization_transaction
+    - organization_balance_before
+    - recipient_balance_before
+    """
+    clean_organization_id = _validate_positive_id(
+        value=organization_id,
+        field_name="Organization ID",
+    )
+    clean_actor_user_id = _validate_positive_id(
+        value=actor_user_id,
+        field_name="Actor User ID",
+    )
+    clean_recipient_user_id = _validate_positive_id(
+        value=recipient_user_id,
+        field_name="Recipient User ID",
+    )
+    clean_recipient_is_bot = _validate_boolean(
+        value=recipient_is_bot,
+        field_name="recipient_is_bot",
+    )
+    clean_amount = _validate_payment_amount(
+        amount
+    )
+    clean_reason = _clean_payment_reason(
+        reason
+    )
+
+    if clean_recipient_is_bot:
+        raise ValueError(
+            "Bots cannot receive organization payments."
+        )
+
+    reference_id = (
+        _build_user_payment_reference_id()
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            actor_row = _get_user_row(
+                connection=connection,
+                user_id=clean_actor_user_id,
+            )
+            if actor_row is None:
+                raise ValueError(
+                    "Paying user is not registered."
+                )
+
+            recipient_row = _get_user_row(
+                connection=connection,
+                user_id=clean_recipient_user_id,
+            )
+            if recipient_row is None:
+                raise ValueError(
+                    "Payment recipient is not registered."
+                )
+
+            organization_row = _get_organization_row(
+                connection=connection,
+                organization_id=clean_organization_id,
+            )
+            if organization_row is None:
+                raise ValueError(
+                    "Requested organization is not registered."
+                )
+
+            if int(organization_row["active"]) != 1:
+                raise ValueError(
+                    "Inactive organizations cannot issue "
+                    "new payments."
+                )
+
+            membership_row = _get_membership_row(
+                connection=connection,
+                organization_id=clean_organization_id,
+                user_id=clean_actor_user_id,
+            )
+            if (
+                membership_row is None
+                or int(
+                    membership_row[
+                        "membership_active"
+                    ]
+                )
+                != 1
+            ):
+                raise ValueError(
+                    "You are not an active member "
+                    "of this organization."
+                )
+
+            if not role_has_permission(
+                role=membership_row["role"],
+                permission=(
+                    ORGANIZATION_PERMISSION_PAY_USER
+                ),
+            ):
+                raise ValueError(
+                    "Your organization role does not "
+                    "permit this action."
+                )
+
+            current_organization_balance = int(
+                organization_row["balance"]
+            )
+            current_recipient_balance = int(
+                recipient_row["balance"]
+            )
+
+            if current_organization_balance < clean_amount:
+                raise ValueError(
+                    "Organization has insufficient "
+                    "Nexus Credits."
+                )
+
+            updated_organization_balance = (
+                current_organization_balance
+                - clean_amount
+            )
+            updated_recipient_balance = (
+                current_recipient_balance
+                + clean_amount
+            )
+
+            now = utc_now()
+
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    updated_organization_balance,
+                    now,
+                    clean_organization_id,
+                ),
+            )
+
+            connection.execute(
+                """
+                UPDATE users
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                (
+                    updated_recipient_balance,
+                    now,
+                    clean_recipient_user_id,
+                ),
+            )
+
+            recipient_transaction_reason = (
+                "Organization payment from "
+                f"{organization_row['name']}. "
+                "Authorized by "
+                f"{actor_row['display_name']} "
+                f"({clean_actor_user_id}). "
+                f"Reason: {clean_reason} "
+                f"Reference: {reference_id}."
+            )
+
+            recipient_transaction_cursor = (
+                connection.execute(
+                    """
+                    INSERT INTO transactions (
+                        user_id,
+                        target_user_id,
+                        type,
+                        amount,
+                        reason,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        clean_recipient_user_id,
+                        clean_actor_user_id,
+                        (
+                            TRANSACTION_ORGANIZATION_USER_PAYMENT_RECEIVED
+                        ),
+                        clean_amount,
+                        recipient_transaction_reason,
+                        now,
+                    ),
+                )
+            )
+
+            organization_transaction_cursor = (
+                connection.execute(
+                    """
+                    INSERT INTO organization_transactions (
+                        organization_id,
+                        actor_user_id,
+                        target_user_id,
+                        target_organization_id,
+                        transaction_type,
+                        amount,
+                        balance_after,
+                        reason,
+                        related_item_id,
+                        reference_id,
+                        created_at
+                    )
+                    VALUES (
+                        ?,
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+                        clean_organization_id,
+                        clean_actor_user_id,
+                        clean_recipient_user_id,
+                        (
+                            ORGANIZATION_TRANSACTION_USER_PAYMENT
+                        ),
+                        -clean_amount,
+                        updated_organization_balance,
+                        clean_reason,
+                        reference_id,
+                        now,
+                    ),
+                )
+            )
+
+            recipient_transaction_id = int(
+                recipient_transaction_cursor.lastrowid
+            )
+            organization_transaction_id = int(
+                organization_transaction_cursor.lastrowid
+            )
+
+            updated_recipient_row = _get_user_row(
+                connection=connection,
+                user_id=clean_recipient_user_id,
+            )
+            updated_organization_row = _get_organization_row(
+                connection=connection,
+                organization_id=clean_organization_id,
+            )
+            recipient_transaction_row = (
+                _get_user_transaction_row(
+                    connection=connection,
+                    transaction_id=(
+                        recipient_transaction_id
+                    ),
+                )
+            )
+            organization_transaction_row = (
+                _get_organization_transaction_row(
+                    connection=connection,
+                    transaction_id=(
+                        organization_transaction_id
+                    ),
+                )
+            )
+
+            if updated_recipient_row is None:
+                raise RuntimeError(
+                    "Payment changed the recipient balance "
+                    "but the updated account could not "
+                    "be retrieved."
+                )
+
+            if updated_organization_row is None:
+                raise RuntimeError(
+                    "Payment changed the organization balance "
+                    "but the updated organization could not "
+                    "be retrieved."
+                )
+
+            if recipient_transaction_row is None:
+                raise RuntimeError(
+                    "Payment changed balances but the "
+                    "recipient transaction could not "
+                    "be retrieved."
+                )
+
+            if organization_transaction_row is None:
+                raise RuntimeError(
+                    "Payment changed balances but the "
+                    "organization transaction could not "
+                    "be retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Organization payment could not be completed. "
+            "No funds were moved."
+        ) from error
+
+    return {
+        "reference_id": reference_id,
+        "actor": dict(actor_row),
+        "recipient": dict(updated_recipient_row),
+        "organization": dict(
+            updated_organization_row
+        ),
+        "membership": dict(membership_row),
+        "recipient_transaction": dict(
+            recipient_transaction_row
+        ),
+        "organization_transaction": dict(
+            organization_transaction_row
+        ),
+        "organization_balance_before": (
+            current_organization_balance
+        ),
+        "recipient_balance_before": (
+            current_recipient_balance
         ),
     }

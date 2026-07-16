@@ -12,6 +12,7 @@ from services.log_channel_service import (
 )
 from services.organization_finance_service import (
     deposit_user_funds_to_organization,
+    pay_organization_funds_to_user,
 )
 from services.organization_membership_service import (
     get_organization_members,
@@ -559,6 +560,174 @@ async def org_deposit(
         ephemeral=True,
     )
 
+@org_group.command(
+    name="payuser",
+    description=(
+        "Pay a citizen from an organization account."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an active organization name."
+    ),
+    recipient=(
+        "The citizen receiving the organization payment."
+    ),
+    amount=(
+        "The number of organization Nexus Credits to pay."
+    ),
+    reason=(
+        "The required reason for this organization payment."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        active_organization_autocomplete
+    ),
+)
+async def org_payuser(
+    interaction: discord.Interaction,
+    organization_name: str,
+    recipient: discord.Member,
+    amount: int,
+    reason: str,
+):
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    if recipient.bot:
+        embed = envi_error(
+            title="ENVI ORGANIZATION PAYMENT DENIED",
+            reason=(
+                "Bots cannot receive organization payments."
+            ),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=interaction.user.display_name,
+    )
+    ensure_user(
+        user_id=recipient.id,
+        display_name=recipient.display_name,
+    )
+
+    organization = _get_active_organization(
+        organization_name
+    )
+    if organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION PAYMENT DENIED",
+            reason=(
+                "Requested organization is not available "
+                "in the active Nexus directory."
+            ),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = pay_organization_funds_to_user(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            actor_user_id=interaction.user.id,
+            recipient_user_id=recipient.id,
+            recipient_is_bot=recipient.bot,
+            amount=amount,
+            reason=reason,
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION PAYMENT DENIED",
+            reason=str(error),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    updated_recipient = result["recipient"]
+    updated_organization = result[
+        "organization"
+    ]
+    membership = result["membership"]
+    recipient_transaction = result[
+        "recipient_transaction"
+    ]
+    organization_transaction = result[
+        "organization_transaction"
+    ]
+    reference_id = result["reference_id"]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ORGANIZATION USER PAYMENT LOG",
+        description=(
+            "Type: "
+            f"`{recipient_transaction['type']}` / "
+            f"`{organization_transaction['transaction_type']}`\n"
+            f"Reference: `{reference_id}`\n"
+            f"Authorized By: {interaction.user.mention}\n"
+            f"Actor ID: `{interaction.user.id}`\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            "Organization ID: "
+            f"`{updated_organization['organization_id']}`\n"
+            f"Recipient: {recipient.mention}\n"
+            f"Recipient ID: `{recipient.id}`\n"
+            f"Amount: **{format_credits(amount)}**\n"
+            "Organization Previous Balance: "
+            f"**{format_credits(result['organization_balance_before'])}**\n"
+            "Organization Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            "Recipient Previous Balance: "
+            f"**{format_credits(result['recipient_balance_before'])}**\n"
+            "Recipient Updated Balance: "
+            f"**{format_credits(updated_recipient['balance'])}**\n"
+            f"Reason: {organization_transaction['reason']}\n"
+            "Personal Transaction ID: "
+            f"`{recipient_transaction['transaction_id']}`\n"
+            "Organization Transaction ID: "
+            f"`{organization_transaction['organization_transaction_id']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION PAYMENT COMPLETE",
+        description=(
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            f"Recipient: {recipient.mention}\n"
+            "Authorized By: "
+            f"{interaction.user.mention}\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            f"Amount Paid: **{format_credits(amount)}**\n"
+            "Organization Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            f"Reference: `{reference_id}`\n\n"
+            "**Reason**\n"
+            f"{organization_transaction['reason']}"
+        ),
+    )
+
+    await interaction.followup.send(
+        embed=embed,
+        ephemeral=True,
+    )
 
 async def setup(
     bot: commands.Bot,
