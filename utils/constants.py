@@ -60,6 +60,12 @@ ITEM_RARITIES = (
     "Exordium-Class",
 )
 
+SHOP_SYSTEM_SELLER_VALUE = "__SYSTEM__"
+
+SHOP_SYSTEM_SELLER_LABEL = (
+    "ENVI Commercial Exchange — System-Owned"
+)
+
 # -----------------------------
 # V2 Organization Foundation
 # -----------------------------

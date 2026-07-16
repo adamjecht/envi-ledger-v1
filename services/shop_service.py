@@ -1,3 +1,5 @@
+import sqlite3
+
 from db.database import get_connection
 from services.economy_service import utc_now
 from utils.constants import (
@@ -78,6 +80,30 @@ DEFAULT_SHOP_ITEMS = [
         None,
     ),
 ]
+
+SHOP_ITEM_SELECT = """
+SELECT
+    shop.item_id,
+    shop.name,
+    shop.price,
+    shop.description,
+    shop.category,
+    shop.rarity,
+    shop.usable,
+    shop.consumable,
+    shop.use_message,
+    shop.stock,
+    shop.seller_org_id,
+    shop.active,
+    shop.created_at,
+    shop.updated_at,
+    seller.name AS seller_org_name,
+    seller.organization_type AS seller_org_type,
+    seller.active AS seller_org_active
+FROM shop_items AS shop
+LEFT JOIN organizations AS seller
+    ON seller.organization_id = shop.seller_org_id
+"""
 
 
 def validate_shop_category(category: str | None) -> str:
@@ -181,6 +207,95 @@ def validate_use_settings(
     if use_message is not None and not usable:
         raise ValueError("Items with a use message must also be usable.")
 
+def _validate_seller_organization(
+    connection: sqlite3.Connection,
+    seller_org_id: int | None,
+) -> dict | None:
+    """
+    Validates a newly selected shop seller.
+
+    None represents the system-owned ENVI Commercial
+    Exchange.
+
+    Only active registered organizations may receive a new
+    item assignment.
+    """
+    if seller_org_id is None:
+        return None
+
+    if (
+        isinstance(seller_org_id, bool)
+        or not isinstance(seller_org_id, int)
+        or seller_org_id <= 0
+    ):
+        raise ValueError(
+            "Seller organization ID must be a positive "
+            "integer."
+        )
+
+    row = connection.execute(
+        """
+        SELECT
+            organization_id,
+            name,
+            organization_type,
+            active
+        FROM organizations
+        WHERE organization_id = ?
+        """,
+        (seller_org_id,),
+    ).fetchone()
+
+    if row is None:
+        raise ValueError(
+            "Selected seller organization is not registered."
+        )
+
+    if int(row["active"]) != 1:
+        raise ValueError(
+            "Inactive organizations cannot receive new "
+            "shop-item assignments."
+        )
+
+    return dict(row)
+
+
+def format_item_seller(
+    item: dict,
+) -> str:
+    """
+    Formats item seller metadata for staff output.
+    """
+    seller_org_id = item.get(
+        "seller_org_id"
+    )
+
+    if seller_org_id is None:
+        return (
+            "ENVI Commercial Exchange "
+            "(`System-Owned`)"
+        )
+
+    seller_name = (
+        str(item.get("seller_org_name")).strip()
+        if item.get("seller_org_name")
+        else "Unknown Organization"
+    )
+
+    seller_status = (
+        "Active"
+        if int(
+            item.get("seller_org_active", 0)
+        )
+        == 1
+        else "Inactive"
+    )
+
+    return (
+        f"{seller_name} "
+        f"(`Organization #{seller_org_id}`, "
+        f"{seller_status})"
+    )
 
 def format_stock(stock: int | None) -> str:
     """
@@ -394,11 +509,26 @@ def seed_default_shop_items() -> None:
                     consumable,
                     use_message,
                     stock,
+                    seller_org_id,
                     active,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                VALUES (
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    NULL,
+                    1,
+                    ?,
+                    ?
+                )
                 """,
                 (
                     name,
@@ -463,113 +593,88 @@ def seed_default_shop_items() -> None:
         connection.commit()
 
 
-def get_active_shop_items(category: str | None = None) -> list[dict]:
+def get_active_shop_items(
+    category: str | None = None,
+) -> list[dict]:
     """
-    Returns all active shop items.
+    Returns all active shop items with seller metadata.
 
-    If a category is provided, only active items in that category are returned.
+    If a category is provided, only active items in that
+    category are returned.
     """
-
     with get_connection() as connection:
         if category is None:
             rows = connection.execute(
-                """
-                SELECT
-                    item_id,
-                    name,
-                    price,
-                    description,
-                    category,
-                    rarity,
-                    usable,
-                    consumable,
-                    use_message,
-                    stock
-                FROM shop_items
-                WHERE active = 1
-                ORDER BY price ASC, name ASC
+                f"""
+                {SHOP_ITEM_SELECT}
+                WHERE shop.active = 1
+                ORDER BY
+                    shop.price ASC,
+                    shop.name ASC
                 """
             ).fetchall()
         else:
-            clean_category = validate_shop_category(category)
+            clean_category = validate_shop_category(
+                category
+            )
 
             rows = connection.execute(
-                """
-                SELECT
-                    item_id,
-                    name,
-                    price,
-                    description,
-                    category,
-                    rarity,
-                    usable,
-                    consumable,
-                    use_message,
-                    stock
-                FROM shop_items
-                WHERE active = 1 AND category = ?
-                ORDER BY price ASC, name ASC
+                f"""
+                {SHOP_ITEM_SELECT}
+                WHERE
+                    shop.active = 1
+                    AND shop.category = ?
+                ORDER BY
+                    shop.price ASC,
+                    shop.name ASC
                 """,
                 (clean_category,),
             ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [
+        dict(row)
+        for row in rows
+    ]
 
 def get_all_shop_items() -> list[dict]:
     """
-    Returns every registered shop item.
+    Returns every registered shop item with seller metadata.
 
-    Active and inactive items are included so administrative commands
-    can inspect, edit, or manage the complete item catalog.
+    Active and inactive items are included so
+    administrative commands can inspect, edit, or manage
+    the complete item catalog.
     """
-
     with get_connection() as connection:
         rows = connection.execute(
-            """
-            SELECT
-                item_id,
-                name,
-                price,
-                description,
-                active,
-                category,
-                rarity,
-                usable,
-                consumable,
-                use_message,
-                stock
-            FROM shop_items
+            f"""
+            {SHOP_ITEM_SELECT}
             ORDER BY
-                active DESC,
-                name ASC
+                shop.active DESC,
+                shop.name ASC
             """
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    return [
+        dict(row)
+        for row in rows
+    ]
 
 
-def get_shop_item_by_name(item_name: str) -> dict | None:
+def get_shop_item_by_name(
+    item_name: str,
+) -> dict | None:
     """
-    Finds an active shop item by name.
+    Finds an active shop item by name with seller metadata.
+
     Matching is case-insensitive.
     """
-
     with get_connection() as connection:
         row = connection.execute(
-            """
-            SELECT
-                item_id,
-                name,
-                price,
-                description,
-                category,
-                rarity,
-                usable,
-                consumable,
-                use_message,
-                stock
-            FROM shop_items
-            WHERE LOWER(name) = LOWER(?) AND active = 1
+            f"""
+            {SHOP_ITEM_SELECT}
+            WHERE
+                LOWER(shop.name) = LOWER(?)
+                AND shop.active = 1
             """,
             (item_name,),
         ).fetchone()
@@ -580,28 +685,19 @@ def get_shop_item_by_name(item_name: str) -> dict | None:
     return dict(row)
 
 
-def get_shop_item_by_id(item_id: int) -> dict | None:
+def get_shop_item_by_id(
+    item_id: int,
+) -> dict | None:
     """
-    Finds a shop item by ID, including inactive items.
-    """
+    Finds a shop item by ID with seller metadata.
 
+    Active and inactive items are supported.
+    """
     with get_connection() as connection:
         row = connection.execute(
-            """
-            SELECT
-                item_id,
-                name,
-                price,
-                description,
-                category,
-                rarity,
-                usable,
-                consumable,
-                use_message,
-                stock,
-                active
-            FROM shop_items
-            WHERE item_id = ?
+            f"""
+            {SHOP_ITEM_SELECT}
+            WHERE shop.item_id = ?
             """,
             (item_id,),
         ).fetchone()
@@ -612,29 +708,20 @@ def get_shop_item_by_id(item_id: int) -> dict | None:
     return dict(row)
 
 
-def get_shop_item_by_name_any_status(item_name: str) -> dict | None:
+def get_shop_item_by_name_any_status(
+    item_name: str,
+) -> dict | None:
     """
-    Finds a shop item by name, including inactive items.
-    Matching is case-insensitive.
-    """
+    Finds a shop item by name with seller metadata.
 
+    Active and inactive items are supported. Matching is
+    case-insensitive.
+    """
     with get_connection() as connection:
         row = connection.execute(
-            """
-            SELECT
-                item_id,
-                name,
-                price,
-                description,
-                category,
-                rarity,
-                usable,
-                consumable,
-                use_message,
-                stock,
-                active
-            FROM shop_items
-            WHERE LOWER(name) = LOWER(?)
+            f"""
+            {SHOP_ITEM_SELECT}
+            WHERE LOWER(shop.name) = LOWER(?)
             """,
             (item_name,),
         ).fetchone()
@@ -655,19 +742,36 @@ def create_shop_item(
     consumable: bool | None = None,
     use_message: str | None = None,
     stock: int | None = None,
+    seller_org_id: int | None = None,
 ) -> dict:
     """
     Creates a new active shop item.
-    """
 
+    A seller_org_id of None creates a system-owned item.
+    Any organization seller must be registered and active.
+    """
     clean_name = name.strip()
     clean_description = description.strip()
-    clean_category = validate_shop_category(category)
-    clean_rarity = validate_item_rarity(rarity)
-    clean_usable = normalize_bool(usable, DEFAULT_ITEM_USABLE)
-    clean_consumable = normalize_bool(consumable, DEFAULT_ITEM_CONSUMABLE)
-    clean_use_message = normalize_use_message(use_message)
-    clean_stock = normalize_stock(stock)
+    clean_category = validate_shop_category(
+        category
+    )
+    clean_rarity = validate_item_rarity(
+        rarity
+    )
+    clean_usable = normalize_bool(
+        usable,
+        DEFAULT_ITEM_USABLE,
+    )
+    clean_consumable = normalize_bool(
+        consumable,
+        DEFAULT_ITEM_CONSUMABLE,
+    )
+    clean_use_message = normalize_use_message(
+        use_message
+    )
+    clean_stock = normalize_stock(
+        stock
+    )
 
     validate_use_settings(
         usable=clean_usable,
@@ -676,22 +780,46 @@ def create_shop_item(
     )
 
     if not clean_name:
-        raise ValueError("Item name cannot be empty.")
+        raise ValueError(
+            "Item name cannot be empty."
+        )
 
-    if price <= 0:
-        raise ValueError("Price must be greater than zero.")
+    if (
+        isinstance(price, bool)
+        or not isinstance(price, int)
+        or price <= 0
+    ):
+        raise ValueError(
+            "Price must be greater than zero."
+        )
 
     if not clean_description:
-        raise ValueError("Item description cannot be empty.")
+        raise ValueError(
+            "Item description cannot be empty."
+        )
 
-    existing_item = get_shop_item_by_name_any_status(clean_name)
-
+    existing_item = (
+        get_shop_item_by_name_any_status(
+            clean_name
+        )
+    )
     if existing_item is not None:
-        raise ValueError("An item with that name already exists.")
+        raise ValueError(
+            "An item with that name already exists."
+        )
 
     now = utc_now()
 
     with get_connection() as connection:
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        _validate_seller_organization(
+            connection=connection,
+            seller_org_id=seller_org_id,
+        )
+
         cursor = connection.execute(
             """
             INSERT INTO shop_items (
@@ -704,11 +832,26 @@ def create_shop_item(
                 consumable,
                 use_message,
                 stock,
+                seller_org_id,
                 active,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                ?,
+                1,
+                ?,
+                ?
+            )
             """,
             (
                 clean_name,
@@ -720,6 +863,7 @@ def create_shop_item(
                 1 if clean_consumable else 0,
                 clean_use_message,
                 clean_stock,
+                seller_org_id,
                 now,
                 now,
             ),
@@ -727,11 +871,19 @@ def create_shop_item(
 
         connection.commit()
 
-    item_id = cursor.lastrowid
-    item = get_shop_item_by_id(item_id)
+    item_id = int(
+        cursor.lastrowid
+    )
+
+    item = get_shop_item_by_id(
+        item_id
+    )
 
     if item is None:
-        raise RuntimeError("Shop item was created, but could not be retrieved.")
+        raise RuntimeError(
+            "Shop item was created, but could not be "
+            "retrieved."
+        )
 
     return item
 
@@ -748,6 +900,8 @@ def update_shop_item(
     consumable: bool | None = None,
     use_message: str | None = None,
     stock: int | None = None,
+    seller_org_id: int | None = None,
+    update_seller: bool = False,
 ) -> dict:
     """
     Updates an existing shop item.
@@ -846,15 +1000,47 @@ def update_shop_item(
         updates.append("active = ?")
         values.append(1 if active else 0)
 
-    if not updates:
-        raise ValueError("No item changes were provided.")
-
-    updates.append("updated_at = ?")
-    values.append(utc_now())
-
-    values.append(item["item_id"])
-
     with get_connection() as connection:
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        if update_seller:
+            _validate_seller_organization(
+                connection=connection,
+                seller_org_id=seller_org_id,
+            )
+
+            current_seller_org_id = item.get(
+                "seller_org_id"
+            )
+
+            if (
+                current_seller_org_id
+                != seller_org_id
+            ):
+                updates.append(
+                    "seller_org_id = ?"
+                )
+                values.append(
+                    seller_org_id
+                )
+
+        if not updates:
+            raise ValueError(
+                "No item changes were provided."
+            )
+
+        updates.append(
+            "updated_at = ?"
+        )
+        values.append(
+            utc_now()
+        )
+        values.append(
+            item["item_id"]
+        )
+
         connection.execute(
             f"""
             UPDATE shop_items

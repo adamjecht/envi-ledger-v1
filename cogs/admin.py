@@ -32,6 +32,7 @@ from services.organization_service import (
 from services.shop_service import (
     create_shop_item,
     deactivate_shop_item,
+    format_item_seller,
     format_stock,
     restock_limited_item,
     update_shop_item,
@@ -51,6 +52,7 @@ from utils.constants import (
     ORGANIZATION_TYPE_BUSINESS,
     ORGANIZATION_TYPE_GOVERNMENT,
     ORGANIZATION_TYPE_INSTITUTION,
+    SHOP_SYSTEM_SELLER_VALUE,
 )
 from utils.autocomplete import (
     admin_edit_item_autocomplete,
@@ -64,6 +66,7 @@ from utils.organization_autocomplete import (
     active_organization_autocomplete,
     admin_organization_autocomplete,
     inactive_organization_autocomplete,
+    shop_seller_organization_autocomplete,
 )
 
 
@@ -137,6 +140,48 @@ def format_organization_status(
         "Active"
         if int(active) == 1
         else "Inactive"
+    )
+
+def resolve_item_seller_org_id(
+    seller_selection: str | None,
+) -> int | None:
+    """
+    Converts an admin seller selection into an organization
+    ID.
+
+    None and the explicit system value both represent the
+    ENVI Commercial Exchange.
+    """
+    if seller_selection is None:
+        return None
+
+    clean_selection = seller_selection.strip()
+
+    if (
+        not clean_selection
+        or clean_selection
+        == SHOP_SYSTEM_SELLER_VALUE
+    ):
+        return None
+
+    organization = get_organization_by_name(
+        clean_selection
+    )
+
+    if organization is None:
+        raise ValueError(
+            "Selected seller organization is not "
+            "registered."
+        )
+
+    if int(organization["active"]) != 1:
+        raise ValueError(
+            "Inactive organizations cannot receive new "
+            "shop-item assignments."
+        )
+
+    return int(
+        organization["organization_id"]
     )
 
 def format_organization_role(
@@ -1587,7 +1632,9 @@ async def admin_setbalance(
 
 @admin_group.command(
     name="additem",
-    description="Add a new item to the ENVI Commercial Exchange.",
+    description=(
+        "Add a new item to the ENVI Commercial Exchange."
+    ),
 )
 @app_commands.describe(
     name="The item name.",
@@ -1595,34 +1642,71 @@ async def admin_setbalance(
     description="The item description.",
     category="The item category.",
     rarity="The item rarity.",
-    stock="Optional limited stock. Leave blank for unlimited stock.",
+    stock=(
+        "Optional limited stock. "
+        "Leave blank for unlimited stock."
+    ),
+    seller_organization=(
+        "Optional active organization seller. "
+        "Leave blank for a system-owned item."
+    ),
 )
 @app_commands.choices(
     category=[
-        app_commands.Choice(name=category, value=category)
+        app_commands.Choice(
+            name=category,
+            value=category,
+        )
         for category in SHOP_CATEGORIES
     ],
     rarity=[
-        app_commands.Choice(name=rarity, value=rarity)
+        app_commands.Choice(
+            name=rarity,
+            value=rarity,
+        )
         for rarity in ITEM_RARITIES
     ],
+)
+@app_commands.autocomplete(
+    seller_organization=(
+        shop_seller_organization_autocomplete
+    ),
 )
 async def admin_additem(
     interaction: discord.Interaction,
     name: str,
     price: int,
     description: str,
-    category: app_commands.Choice[str] | None = None,
-    rarity: app_commands.Choice[str] | None = None,
+    category: (
+        app_commands.Choice[str] | None
+    ) = None,
+    rarity: (
+        app_commands.Choice[str] | None
+    ) = None,
     stock: int | None = None,
+    seller_organization: str | None = None,
 ):
     if not await require_admin(interaction):
         return
 
-    selected_category = category.value if category is not None else None
-    selected_rarity = rarity.value if rarity is not None else None
+    selected_category = (
+        category.value
+        if category is not None
+        else None
+    )
+    selected_rarity = (
+        rarity.value
+        if rarity is not None
+        else None
+    )
 
     try:
+        seller_org_id = (
+            resolve_item_seller_org_id(
+                seller_organization
+            )
+        )
+
         item = create_shop_item(
             name=name,
             price=price,
@@ -1630,14 +1714,22 @@ async def admin_additem(
             category=selected_category,
             rarity=selected_rarity,
             stock=stock,
+            seller_org_id=seller_org_id,
         )
     except ValueError as error:
         embed = envi_error(
             title="ENVI ADMIN ITEM CREATION DENIED",
             reason=str(error),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
         return
+
+    seller_text = format_item_seller(
+        item
+    )
 
     await send_ledger_log(
         bot=interaction.client,
@@ -1645,12 +1737,14 @@ async def admin_additem(
         description=(
             "Type: `ADMIN_SHOP_ADD`\n"
             f"Operator: {interaction.user.mention}\n"
+            f"Item ID: `{item['item_id']}`\n"
             f"Item: **{item['name']}**\n"
+            f"Seller: **{seller_text}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
             f"Stock: `{format_stock(item['stock'])}`\n"
-            f"Status: **Active**\n"
+            "Status: **Active**\n"
             f"Description: {item['description']}"
         ),
     )
@@ -1659,21 +1753,28 @@ async def admin_additem(
         title="ENVI ADMIN ITEM CREATED",
         description=(
             f"Operator: {interaction.user.mention}\n"
+            f"Item ID: `{item['item_id']}`\n"
             f"Item: **{item['name']}**\n"
+            f"Seller: **{seller_text}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
             f"Stock: `{format_stock(item['stock'])}`\n"
-            f"Status: **Active**\n"
+            "Status: **Active**\n"
             f"Description: {item['description']}"
         ),
     )
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_group.command(
     name="edititem",
-    description="Edit an existing ENVI Commercial Exchange item.",
+    description=(
+        "Edit an existing ENVI Commercial Exchange item."
+    ),
 )
 @app_commands.describe(
     current_name="The current item name.",
@@ -1683,20 +1784,36 @@ async def admin_additem(
     active="Optional active/inactive status.",
     category="Optional new item category.",
     rarity="Optional new item rarity.",
-    stock="Optional new stock amount. Leave blank to keep current stock.",
+    stock=(
+        "Optional new stock amount. "
+        "Leave blank to keep current stock."
+    ),
+    seller_organization=(
+        "Optional replacement seller. Select "
+        "System-Owned to remove an organization seller."
+    ),
 )
 @app_commands.choices(
     category=[
-        app_commands.Choice(name=category, value=category)
+        app_commands.Choice(
+            name=category,
+            value=category,
+        )
         for category in SHOP_CATEGORIES
     ],
     rarity=[
-        app_commands.Choice(name=rarity, value=rarity)
+        app_commands.Choice(
+            name=rarity,
+            value=rarity,
+        )
         for rarity in ITEM_RARITIES
     ],
 )
 @app_commands.autocomplete(
     current_name=admin_edit_item_autocomplete,
+    seller_organization=(
+        shop_seller_organization_autocomplete
+    ),
 )
 async def admin_edititem(
     interaction: discord.Interaction,
@@ -1705,17 +1822,42 @@ async def admin_edititem(
     price: int | None = None,
     description: str | None = None,
     active: bool | None = None,
-    category: app_commands.Choice[str] | None = None,
-    rarity: app_commands.Choice[str] | None = None,
+    category: (
+        app_commands.Choice[str] | None
+    ) = None,
+    rarity: (
+        app_commands.Choice[str] | None
+    ) = None,
     stock: int | None = None,
+    seller_organization: str | None = None,
 ):
     if not await require_admin(interaction):
         return
 
-    selected_category = category.value if category is not None else None
-    selected_rarity = rarity.value if rarity is not None else None
+    selected_category = (
+        category.value
+        if category is not None
+        else None
+    )
+    selected_rarity = (
+        rarity.value
+        if rarity is not None
+        else None
+    )
+
+    update_seller = (
+        seller_organization is not None
+    )
 
     try:
+        seller_org_id = (
+            resolve_item_seller_org_id(
+                seller_organization
+            )
+            if update_seller
+            else None
+        )
+
         item = update_shop_item(
             current_name=current_name,
             new_name=new_name,
@@ -1725,16 +1867,28 @@ async def admin_edititem(
             category=selected_category,
             rarity=selected_rarity,
             stock=stock,
+            seller_org_id=seller_org_id,
+            update_seller=update_seller,
         )
     except ValueError as error:
         embed = envi_error(
             title="ENVI ADMIN ITEM UPDATE DENIED",
             reason=str(error),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
         return
 
-    status = "Active" if int(item["active"]) == 1 else "Inactive"
+    status = (
+        "Active"
+        if int(item["active"]) == 1
+        else "Inactive"
+    )
+    seller_text = format_item_seller(
+        item
+    )
 
     await send_ledger_log(
         bot=interaction.client,
@@ -1742,7 +1896,9 @@ async def admin_edititem(
         description=(
             "Type: `ADMIN_SHOP_EDIT`\n"
             f"Operator: {interaction.user.mention}\n"
+            f"Item ID: `{item['item_id']}`\n"
             f"Item: **{item['name']}**\n"
+            f"Seller: **{seller_text}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
@@ -1756,7 +1912,9 @@ async def admin_edititem(
         title="ENVI ADMIN ITEM UPDATED",
         description=(
             f"Operator: {interaction.user.mention}\n"
+            f"Item ID: `{item['item_id']}`\n"
             f"Item: **{item['name']}**\n"
+            f"Seller: **{seller_text}**\n"
             f"Price: **{format_credits(item['price'])}**\n"
             f"Category: `{item['category']}`\n"
             f"Rarity: `{item['rarity']}`\n"
@@ -1766,7 +1924,10 @@ async def admin_edititem(
         ),
     )
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_group.command(
     name="removeitem",
@@ -1889,6 +2050,10 @@ async def admin_iteminfo(
         fallback="No custom use message registered.",
     )
 
+    seller_text = format_item_seller(
+        item
+    )
+
     embed = envi_embed(
         title="ENVI ADMIN ITEM AUDIT",
         description=(
@@ -1903,8 +2068,7 @@ async def admin_iteminfo(
             f"Item ID: `{item['item_id']}`\n"
             f"Name: **{item['name']}**\n"
             f"Status: **{active_status}**\n"
-            "Seller: **ENVI Commercial Exchange** "
-            "(`System-Owned`)"
+            f"Seller: **{seller_text}**"
         ),
         inline=False,
     )

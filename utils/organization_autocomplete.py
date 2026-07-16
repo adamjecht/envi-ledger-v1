@@ -9,6 +9,8 @@ from services.organization_service import (
 from utils.constants import (
     ORGANIZATION_AUTOCOMPLETE_LIMIT,
     ORGANIZATION_NAME_MAX_LENGTH,
+    SHOP_SYSTEM_SELLER_LABEL,
+    SHOP_SYSTEM_SELLER_VALUE,
 )
 
 
@@ -230,6 +232,80 @@ async def inactive_organization_autocomplete(
                     f"{name} — "
                     f"{organization_type} — "
                     "Inactive"
+                ),
+                value=name,
+            )
+        )
+
+    return choices
+
+async def shop_seller_organization_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """
+    Suggests active seller organizations plus the explicit
+    system-owned option.
+
+    Inactive organizations are deliberately excluded because
+    they cannot receive new shop assignments.
+    """
+    del interaction
+
+    query = current.strip().casefold()
+
+    choices: list[
+        app_commands.Choice[str]
+    ] = []
+
+    system_search_text = (
+        f"{SHOP_SYSTEM_SELLER_LABEL} "
+        "system owned envi commercial exchange"
+    ).casefold()
+
+    if (
+        not query
+        or query in system_search_text
+    ):
+        choices.append(
+            app_commands.Choice(
+                name=_shorten_organization_label(
+                    SHOP_SYSTEM_SELLER_LABEL
+                ),
+                value=SHOP_SYSTEM_SELLER_VALUE,
+            )
+        )
+
+    organizations = get_organizations(
+        active_only=True
+    )
+    matches = _find_matching_organizations(
+        organizations=organizations,
+        current=current,
+    )
+
+    remaining_slots = (
+        ORGANIZATION_AUTOCOMPLETE_LIMIT
+        - len(choices)
+    )
+
+    for organization in matches[
+        :remaining_slots
+    ]:
+        name = str(organization["name"])
+        organization_type = str(
+            organization["organization_type"]
+        ).replace(
+            "_",
+            " ",
+        ).title()
+
+        choices.append(
+            app_commands.Choice(
+                name=_shorten_organization_label(
+                    f"{name} — "
+                    f"{organization_type} — "
+                    "Organization Seller"
                 ),
                 value=name,
             )

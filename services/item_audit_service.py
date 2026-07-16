@@ -68,21 +68,29 @@ def get_item_audit(item_name: str) -> dict | None:
         item_row = connection.execute(
             """
             SELECT
-                item_id,
-                name,
-                price,
-                description,
-                category,
-                rarity,
-                usable,
-                consumable,
-                use_message,
-                stock,
-                active,
-                created_at,
-                updated_at
-            FROM shop_items
-            WHERE LOWER(name) = LOWER(?)
+                shop.item_id,
+                shop.name,
+                shop.price,
+                shop.description,
+                shop.category,
+                shop.rarity,
+                shop.usable,
+                shop.consumable,
+                shop.use_message,
+                shop.stock,
+                shop.seller_org_id,
+                shop.active,
+                shop.created_at,
+                shop.updated_at,
+                seller.name AS seller_org_name,
+                seller.organization_type
+                    AS seller_org_type,
+                seller.active AS seller_org_active
+            FROM shop_items AS shop
+            LEFT JOIN organizations AS seller
+                ON seller.organization_id =
+                    shop.seller_org_id
+            WHERE LOWER(shop.name) = LOWER(?)
             """,
             (clean_item_name,),
         ).fetchone()

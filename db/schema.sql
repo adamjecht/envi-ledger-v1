@@ -25,9 +25,14 @@ CREATE TABLE IF NOT EXISTS shop_items (
     consumable INTEGER NOT NULL DEFAULT 0,
     use_message TEXT,
     stock INTEGER,
+    seller_org_id INTEGER,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (seller_org_id)
+        REFERENCES organizations(organization_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
 );
 CREATE TABLE IF NOT EXISTS inventory (
     user_id INTEGER NOT NULL,

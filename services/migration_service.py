@@ -13,6 +13,10 @@ V2_ORGANIZATION_MIGRATION_VERSION = 200
 V2_ORGANIZATION_MIGRATION_NAME = (
     "create_v2_organization_schema"
 )
+V2_SHOP_SELLER_MIGRATION_VERSION = 210
+V2_SHOP_SELLER_MIGRATION_NAME = (
+    "add_v2_shop_seller_organization"
+)
 
 
 MigrationFunction = Callable[[sqlite3.Cursor], None]
@@ -391,6 +395,39 @@ def apply_v2_organization_migration(
         """
     )
 
+def apply_v2_shop_seller_migration(
+    cursor: sqlite3.Cursor,
+) -> None:
+    """
+    Adds the optional seller organization relationship to
+    shop items.
+
+    Existing rows remain system-owned because the new column
+    defaults to NULL.
+
+    The migration is safely repeatable.
+    """
+    add_column_if_missing(
+        cursor=cursor,
+        table_name="shop_items",
+        column_name="seller_org_id",
+        column_definition=(
+            "INTEGER "
+            "REFERENCES organizations(organization_id) "
+            "ON UPDATE CASCADE "
+            "ON DELETE RESTRICT"
+        ),
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+        idx_shop_items_seller_org
+        ON shop_items (
+            seller_org_id
+        )
+        """
+    )
 
 MIGRATIONS: tuple[
     tuple[
@@ -409,6 +446,11 @@ MIGRATIONS: tuple[
         V2_ORGANIZATION_MIGRATION_VERSION,
         V2_ORGANIZATION_MIGRATION_NAME,
         apply_v2_organization_migration,
+    ),
+    (
+        V2_SHOP_SELLER_MIGRATION_VERSION,
+        V2_SHOP_SELLER_MIGRATION_NAME,
+        apply_v2_shop_seller_migration,
     ),
 )
 
