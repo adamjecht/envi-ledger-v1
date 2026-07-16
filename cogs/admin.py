@@ -13,6 +13,11 @@ from services.economy_report_service import build_economy_report
 from services.item_audit_service import get_item_audit
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
+from services.organization_service import (
+    create_organization,
+    deactivate_organization,
+    update_organization,
+)
 from services.shop_service import (
     create_shop_item,
     deactivate_shop_item,
@@ -29,6 +34,9 @@ from utils.constants import (
     TRANSACTION_ADMIN_REMOVE,
     TRANSACTION_ADMIN_RESET,
     TRANSACTION_ADMIN_SET,
+    ORGANIZATION_TYPE_BUSINESS,
+    ORGANIZATION_TYPE_GOVERNMENT,
+    ORGANIZATION_TYPE_INSTITUTION,
 )
 from utils.autocomplete import (
     admin_edit_item_autocomplete,
@@ -38,12 +46,23 @@ from utils.autocomplete import (
 )
 from utils.embeds import envi_embed, envi_error
 from utils.formatting import format_credits
+from utils.organization_autocomplete import (
+    active_organization_autocomplete,
+    admin_organization_autocomplete,
+)
 
 
 admin_group = app_commands.Group(
     name="admin",
     description="ENVI Ledger staff tools.",
 )
+
+admin_org_group = app_commands.Group(
+    name="org",
+    description="Manage ENVI Ledger organizations.",
+)
+
+admin_group.add_command(admin_org_group)
 
 def format_transaction_amount(amount: int) -> str:
     """
@@ -78,6 +97,80 @@ def format_audit_text(
         return text
 
     return f"{text[: limit - 3]}..."
+
+def format_organization_type(
+    organization_type: object,
+) -> str:
+    """
+    Formats an organization type for staff output.
+    """
+
+    return str(organization_type).replace(
+        "_",
+        " ",
+    ).title()
+
+
+def format_organization_status(
+    active: object,
+) -> str:
+    """
+    Formats an organization active value.
+    """
+
+    return (
+        "Active"
+        if int(active) == 1
+        else "Inactive"
+    )
+
+
+def build_organization_change_summary(
+    before: dict,
+    after: dict,
+    changed_fields: tuple[str, ...],
+) -> str:
+    """
+    Builds a readable before-and-after organization audit.
+    """
+
+    lines: list[str] = []
+
+    if "name" in changed_fields:
+        lines.append(
+            f"Name: **{before['name']}** "
+            f"→ **{after['name']}**"
+        )
+
+    if "organization_type" in changed_fields:
+        lines.append(
+            "Type: "
+            f"**{format_organization_type(before['organization_type'])}** "
+            "→ "
+            f"**{format_organization_type(after['organization_type'])}**"
+        )
+
+    if "description" in changed_fields:
+        old_description = format_audit_text(
+            before["description"],
+            fallback="No description registered.",
+            limit=600,
+        )
+
+        new_description = format_audit_text(
+            after["description"],
+            fallback="No description registered.",
+            limit=600,
+        )
+
+        lines.append(
+            "**Previous Description**\n"
+            f"{old_description}\n\n"
+            "**Updated Description**\n"
+            f"{new_description}"
+        )
+
+    return "\n".join(lines)
 
 
 async def require_admin(interaction: discord.Interaction) -> bool:
@@ -123,6 +216,325 @@ async def admin_status(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@admin_org_group.command(
+    name="create",
+    description="Create a new ENVI Ledger organization.",
+)
+@app_commands.describe(
+    name="The unique organization name.",
+    organization_type="The organization classification.",
+    description="Optional organization description.",
+)
+@app_commands.choices(
+    organization_type=[
+        app_commands.Choice(
+            name="Business",
+            value=ORGANIZATION_TYPE_BUSINESS,
+        ),
+        app_commands.Choice(
+            name="Institution",
+            value=ORGANIZATION_TYPE_INSTITUTION,
+        ),
+        app_commands.Choice(
+            name="Government",
+            value=ORGANIZATION_TYPE_GOVERNMENT,
+        ),
+    ],
+)
+async def admin_org_create(
+    interaction: discord.Interaction,
+    name: str,
+    organization_type: app_commands.Choice[str],
+    description: str = "",
+):
+    if not await require_admin(interaction):
+        return
+
+    try:
+        organization = create_organization(
+            name=name,
+            organization_type=(
+                organization_type.value
+            ),
+            description=description,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION CREATION DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    description_text = format_audit_text(
+        organization["description"],
+        fallback="No description registered.",
+        limit=1000,
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION LOG",
+        description=(
+            "Type: `ADMIN_ORG_CREATE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Starting Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Status: **Active**\n\n"
+            "**Description**\n"
+            f"{description_text}"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION CREATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Starting Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Status: **Active**\n\n"
+            "**Description**\n"
+            f"{description_text}"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="edit",
+    description="Edit an existing ENVI Ledger organization.",
+)
+@app_commands.describe(
+    current_name="Start typing the current organization name.",
+    new_name="Optional replacement organization name.",
+    organization_type="Optional replacement classification.",
+    description="Optional replacement description.",
+)
+@app_commands.choices(
+    organization_type=[
+        app_commands.Choice(
+            name="Business",
+            value=ORGANIZATION_TYPE_BUSINESS,
+        ),
+        app_commands.Choice(
+            name="Institution",
+            value=ORGANIZATION_TYPE_INSTITUTION,
+        ),
+        app_commands.Choice(
+            name="Government",
+            value=ORGANIZATION_TYPE_GOVERNMENT,
+        ),
+    ],
+)
+@app_commands.autocomplete(
+    current_name=admin_organization_autocomplete,
+)
+async def admin_org_edit(
+    interaction: discord.Interaction,
+    current_name: str,
+    new_name: str | None = None,
+    organization_type: (
+        app_commands.Choice[str] | None
+    ) = None,
+    description: str | None = None,
+):
+    if not await require_admin(interaction):
+        return
+
+    selected_type = (
+        organization_type.value
+        if organization_type is not None
+        else None
+    )
+
+    try:
+        result = update_organization(
+            current_name=current_name,
+            new_name=new_name,
+            organization_type=selected_type,
+            description=description,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION UPDATE DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    before = result["before"]
+    after = result["after"]
+    changed_fields = result["changed_fields"]
+
+    change_summary = (
+        build_organization_change_summary(
+            before=before,
+            after=after,
+            changed_fields=changed_fields,
+        )
+    )
+
+    status = format_organization_status(
+        after["active"]
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION LOG",
+        description=(
+            "Type: `ADMIN_ORG_EDIT`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{after['organization_id']}`\n"
+            f"Current Organization: **{after['name']}**\n"
+            f"Status: **{status}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(after['balance'])}**\n\n"
+            "**Recorded Changes**\n"
+            f"{change_summary}\n\n"
+            "_Organization ID, memberships, balance, "
+            "and transaction history remain intact._"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION UPDATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{after['organization_id']}`\n"
+            f"Organization: **{after['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(after['organization_type'])}**\n"
+            f"Status: **{status}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(after['balance'])}**\n\n"
+            "**Recorded Changes**\n"
+            f"{change_summary}\n\n"
+            "_Existing memberships and transaction "
+            "history remain attached to this record._"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="deactivate",
+    description="Deactivate an ENVI Ledger organization.",
+)
+@app_commands.describe(
+    organization_name="Start typing an active organization name.",
+    confirm="Confirm that this organization should be deactivated.",
+)
+@app_commands.autocomplete(
+    organization_name=active_organization_autocomplete,
+)
+async def admin_org_deactivate(
+    interaction: discord.Interaction,
+    organization_name: str,
+    confirm: bool,
+):
+    if not await require_admin(interaction):
+        return
+
+    if not confirm:
+        embed = envi_error(
+            title="ENVI ORGANIZATION DEACTIVATION DENIED",
+            reason=(
+                "Deactivation confirmation was not provided."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = deactivate_organization(
+            organization_name
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION DEACTIVATION DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    organization = result["after"]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION LOG",
+        description=(
+            "Type: `ADMIN_ORG_DEACTIVATE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Previous Status: **Active**\n"
+            "Updated Status: **Inactive**\n\n"
+            "_New financial activity is blocked. "
+            "Membership and transaction history remain intact._"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION DEACTIVATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Status: **Inactive**\n\n"
+            "New organization financial activity is now blocked. "
+            "The organization record, balance, memberships, "
+            "and transaction history were not deleted."
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_group.command(
     name="addcredits",

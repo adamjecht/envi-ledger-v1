@@ -372,6 +372,268 @@ def create_organization(
 
     return dict(organization_row)
 
+def update_organization(
+    *,
+    current_name: str,
+    new_name: str | None = None,
+    organization_type: str | None = None,
+    description: str | None = None,
+) -> dict:
+    """
+    Updates organization metadata without replacing its record.
+
+    The organization ID, balance, memberships, and transaction
+    history remain attached to the same organization.
+
+    Returns:
+    - before
+    - after
+    - changed_fields
+    """
+
+    clean_current_name = _clean_required_text(
+        value=current_name,
+        field_name="Current organization name",
+        max_length=ORGANIZATION_NAME_MAX_LENGTH,
+    )
+
+    if (
+        new_name is None
+        and organization_type is None
+        and description is None
+    ):
+        raise ValueError(
+            "At least one organization field must be provided."
+        )
+
+    with get_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+
+        current_row = connection.execute(
+            """
+            SELECT
+                organization_id,
+                name,
+                organization_type,
+                description,
+                balance,
+                active,
+                created_at,
+                updated_at
+            FROM organizations
+            WHERE name = ? COLLATE NOCASE
+            """,
+            (clean_current_name,),
+        ).fetchone()
+
+        if current_row is None:
+            raise ValueError(
+                "Requested organization is not registered."
+            )
+
+        before = dict(current_row)
+
+        updated_name = str(before["name"])
+        updated_type = str(
+            before["organization_type"]
+        )
+        updated_description = str(
+            before["description"]
+        )
+
+        if new_name is not None:
+            updated_name = _clean_required_text(
+                value=new_name,
+                field_name="New organization name",
+                max_length=(
+                    ORGANIZATION_NAME_MAX_LENGTH
+                ),
+            )
+
+            duplicate_row = connection.execute(
+                """
+                SELECT organization_id
+                FROM organizations
+                WHERE
+                    name = ? COLLATE NOCASE
+                    AND organization_id != ?
+                """,
+                (
+                    updated_name,
+                    before["organization_id"],
+                ),
+            ).fetchone()
+
+            if duplicate_row is not None:
+                raise ValueError(
+                    "Organization name is already registered."
+                )
+
+        if organization_type is not None:
+            updated_type = (
+                _normalize_organization_type(
+                    organization_type
+                )
+            )
+
+        if description is not None:
+            updated_description = _clean_description(
+                description
+            )
+
+        changed_fields: list[str] = []
+
+        if updated_name != before["name"]:
+            changed_fields.append("name")
+
+        if updated_type != before["organization_type"]:
+            changed_fields.append(
+                "organization_type"
+            )
+
+        if (
+            updated_description
+            != before["description"]
+        ):
+            changed_fields.append("description")
+
+        if not changed_fields:
+            raise ValueError(
+                "No organization changes were detected."
+            )
+
+        try:
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    name = ?,
+                    organization_type = ?,
+                    description = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    updated_name,
+                    updated_type,
+                    updated_description,
+                    utc_now(),
+                    before["organization_id"],
+                ),
+            )
+
+        except sqlite3.IntegrityError as error:
+            raise ValueError(
+                "Organization could not be updated "
+                "because the requested record is invalid "
+                "or duplicated."
+            ) from error
+
+        updated_row = _get_organization_row_by_id(
+            connection=connection,
+            organization_id=(
+                before["organization_id"]
+            ),
+        )
+
+        connection.commit()
+
+    if updated_row is None:
+        raise RuntimeError(
+            "Organization was updated but the new "
+            "record could not be retrieved."
+        )
+
+    return {
+        "before": before,
+        "after": dict(updated_row),
+        "changed_fields": tuple(
+            changed_fields
+        ),
+    }
+
+
+def deactivate_organization(
+    name: str,
+) -> dict:
+    """
+    Deactivates an organization by name.
+
+    The organization record, balance, memberships, and complete
+    financial history remain intact.
+    """
+
+    clean_name = _clean_required_text(
+        value=name,
+        field_name="Organization name",
+        max_length=ORGANIZATION_NAME_MAX_LENGTH,
+    )
+
+    with get_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+
+        current_row = connection.execute(
+            """
+            SELECT
+                organization_id,
+                name,
+                organization_type,
+                description,
+                balance,
+                active,
+                created_at,
+                updated_at
+            FROM organizations
+            WHERE name = ? COLLATE NOCASE
+            """,
+            (clean_name,),
+        ).fetchone()
+
+        if current_row is None:
+            raise ValueError(
+                "Requested organization is not registered."
+            )
+
+        if int(current_row["active"]) != 1:
+            raise ValueError(
+                "Organization is already inactive."
+            )
+
+        before = dict(current_row)
+
+        connection.execute(
+            """
+            UPDATE organizations
+            SET
+                active = 0,
+                updated_at = ?
+            WHERE organization_id = ?
+            """,
+            (
+                utc_now(),
+                before["organization_id"],
+            ),
+        )
+
+        updated_row = _get_organization_row_by_id(
+            connection=connection,
+            organization_id=(
+                before["organization_id"]
+            ),
+        )
+
+        connection.commit()
+
+    if updated_row is None:
+        raise RuntimeError(
+            "Organization was deactivated but the "
+            "updated record could not be retrieved."
+        )
+
+    return {
+        "before": before,
+        "after": dict(updated_row),
+    }
 
 def get_organization_by_id(
     organization_id: int,
