@@ -11,7 +11,9 @@ from utils.constants import (
     ORGANIZATION_PERMISSION_PAY_ORGANIZATION,
     ORGANIZATION_PERMISSION_PAY_USER,
     ORGANIZATION_PERMISSION_REMOVE_MEMBERS,
+    ORGANIZATION_PERMISSION_VIEW_BALANCE,
     ORGANIZATION_PERMISSION_VIEW_LEDGER,
+    ORGANIZATION_PERMISSION_VIEW_MEMBERS,
     ORGANIZATION_PERMISSIONS,
     ORGANIZATION_ROLE_OWNER,
     ORGANIZATION_ROLE_PERMISSIONS,
@@ -1068,6 +1070,41 @@ def require_organization_permission(
         )
 
     return dict(membership)
+
+def require_organization_members_access(
+    *,
+    organization_id: int,
+    user_id: int,
+) -> dict:
+    """
+    Requires permission to inspect the active member roster.
+    """
+
+    return require_organization_permission(
+        organization_id=organization_id,
+        user_id=user_id,
+        permission=(
+            ORGANIZATION_PERMISSION_VIEW_MEMBERS
+        ),
+    )
+
+
+def require_organization_balance_access(
+    *,
+    organization_id: int,
+    user_id: int,
+) -> dict:
+    """
+    Requires permission to inspect an organization balance.
+    """
+
+    return require_organization_permission(
+        organization_id=organization_id,
+        user_id=user_id,
+        permission=(
+            ORGANIZATION_PERMISSION_VIEW_BALANCE
+        ),
+    )
 
 
 def require_organization_deposit_access(

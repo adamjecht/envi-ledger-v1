@@ -49,6 +49,7 @@ class ENVILedgerBot(commands.Bot):
 
         await self.load_extension("cogs.economy")
         await self.load_extension("cogs.admin")
+        await self.load_extension("cogs.organization")
         await self.load_extension("cogs.help")
 
         # Copies cog slash commands into the test guild for fast syncing.
