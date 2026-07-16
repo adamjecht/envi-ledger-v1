@@ -13,9 +13,15 @@ from services.economy_report_service import build_economy_report
 from services.item_audit_service import get_item_audit
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
+from services.organization_membership_service import (
+    add_organization_member,
+    remove_organization_member,
+    set_organization_member_role,
+)
 from services.organization_service import (
     create_organization,
     deactivate_organization,
+    get_organization_by_name,
     update_organization,
 )
 from services.shop_service import (
@@ -34,6 +40,9 @@ from utils.constants import (
     TRANSACTION_ADMIN_REMOVE,
     TRANSACTION_ADMIN_RESET,
     TRANSACTION_ADMIN_SET,
+    ORGANIZATION_ROLE_MANAGER,
+    ORGANIZATION_ROLE_MEMBER,
+    ORGANIZATION_ROLE_OWNER,
     ORGANIZATION_TYPE_BUSINESS,
     ORGANIZATION_TYPE_GOVERNMENT,
     ORGANIZATION_TYPE_INSTITUTION,
@@ -123,6 +132,18 @@ def format_organization_status(
         if int(active) == 1
         else "Inactive"
     )
+
+def format_organization_role(
+    role: object,
+) -> str:
+    """
+    Formats an organization membership role.
+    """
+
+    return str(role).replace(
+        "_",
+        " ",
+    ).title()
 
 
 def build_organization_change_summary(
@@ -528,6 +549,438 @@ async def admin_org_deactivate(
             "New organization financial activity is now blocked. "
             "The organization record, balance, memberships, "
             "and transaction history were not deleted."
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="addmember",
+    description="Add or reactivate an organization member.",
+)
+@app_commands.describe(
+    organization_name="Start typing the organization name.",
+    member="The server member to add.",
+    role="The member's organization role.",
+)
+@app_commands.choices(
+    role=[
+        app_commands.Choice(
+            name="Owner",
+            value=ORGANIZATION_ROLE_OWNER,
+        ),
+        app_commands.Choice(
+            name="Manager",
+            value=ORGANIZATION_ROLE_MANAGER,
+        ),
+        app_commands.Choice(
+            name="Member",
+            value=ORGANIZATION_ROLE_MEMBER,
+        ),
+    ],
+)
+@app_commands.autocomplete(
+    organization_name=admin_organization_autocomplete,
+)
+async def admin_org_addmember(
+    interaction: discord.Interaction,
+    organization_name: str,
+    member: discord.Member,
+    role: app_commands.Choice[str],
+):
+    if not await require_admin(interaction):
+        return
+
+    organization = get_organization_by_name(
+        organization_name
+    )
+
+    if organization is None:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP ADDITION DENIED",
+            reason=(
+                "Requested organization is not registered."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=member.id,
+        display_name=member.display_name,
+    )
+
+    try:
+        result = add_organization_member(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            user_id=member.id,
+            role=role.value,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP ADDITION DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    membership = result["membership"]
+    reactivated = bool(result["reactivated"])
+
+    action_word = (
+        "Reactivated"
+        if reactivated
+        else "Added"
+    )
+
+    log_type = (
+        "ADMIN_ORG_MEMBER_REACTIVATE"
+        if reactivated
+        else "ADMIN_ORG_MEMBER_ADD"
+    )
+
+    organization_status = (
+        format_organization_status(
+            membership["organization_active"]
+        )
+    )
+
+    inactive_note = (
+        ""
+        if int(
+            membership["organization_active"]
+        )
+        == 1
+        else (
+            "\n\n"
+            "**Notice:** This organization is inactive. "
+            "The membership is stored, but it grants no "
+            "operational permissions until the organization "
+            "is reactivated."
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION MEMBERSHIP LOG",
+        description=(
+            f"Type: `{log_type}`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{membership['organization_id']}`\n"
+            "Organization: "
+            f"**{membership['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            f"Citizen ID: `{member.id}`\n"
+            "Role: "
+            f"**{format_organization_role(membership['role'])}**\n"
+            f"Membership Action: **{action_word}**\n"
+            f"Joined At: `{membership['joined_at']}`\n"
+            f"Updated At: `{membership['updated_at']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title=(
+            "ENVI ORGANIZATION MEMBER REACTIVATED"
+            if reactivated
+            else "ENVI ORGANIZATION MEMBER ADDED"
+        ),
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            "Organization: "
+            f"**{membership['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            "Role: "
+            f"**{format_organization_role(membership['role'])}**\n"
+            f"Membership Status: **Active**"
+            f"{inactive_note}"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="setrole",
+    description="Change an active organization member's role.",
+)
+@app_commands.describe(
+    organization_name="Start typing the organization name.",
+    member="The active organization member.",
+    role="The replacement organization role.",
+)
+@app_commands.choices(
+    role=[
+        app_commands.Choice(
+            name="Owner",
+            value=ORGANIZATION_ROLE_OWNER,
+        ),
+        app_commands.Choice(
+            name="Manager",
+            value=ORGANIZATION_ROLE_MANAGER,
+        ),
+        app_commands.Choice(
+            name="Member",
+            value=ORGANIZATION_ROLE_MEMBER,
+        ),
+    ],
+)
+@app_commands.autocomplete(
+    organization_name=admin_organization_autocomplete,
+)
+async def admin_org_setrole(
+    interaction: discord.Interaction,
+    organization_name: str,
+    member: discord.Member,
+    role: app_commands.Choice[str],
+):
+    if not await require_admin(interaction):
+        return
+
+    organization = get_organization_by_name(
+        organization_name
+    )
+
+    if organization is None:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP ROLE UPDATE DENIED",
+            reason=(
+                "Requested organization is not registered."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = set_organization_member_role(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            user_id=member.id,
+            role=role.value,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP ROLE UPDATE DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    before = result["before"]
+    after = result["after"]
+
+    organization_status = (
+        format_organization_status(
+            after["organization_active"]
+        )
+    )
+
+    inactive_note = (
+        ""
+        if int(after["organization_active"]) == 1
+        else (
+            "\n\n"
+            "**Notice:** This organization is inactive. "
+            "The new role is stored, but it grants no "
+            "operational permissions until reactivation."
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION MEMBERSHIP LOG",
+        description=(
+            "Type: `ADMIN_ORG_MEMBER_SET_ROLE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{after['organization_id']}`\n"
+            f"Organization: "
+            f"**{after['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            f"Citizen ID: `{member.id}`\n"
+            "Previous Role: "
+            f"**{format_organization_role(before['role'])}**\n"
+            "Updated Role: "
+            f"**{format_organization_role(after['role'])}**\n"
+            f"Updated At: `{after['updated_at']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION MEMBER ROLE UPDATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization: "
+            f"**{after['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            "Previous Role: "
+            f"**{format_organization_role(before['role'])}**\n"
+            "Updated Role: "
+            f"**{format_organization_role(after['role'])}**"
+            f"{inactive_note}"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="removemember",
+    description="Remove an active organization member.",
+)
+@app_commands.describe(
+    organization_name="Start typing the organization name.",
+    member="The active organization member to remove.",
+    confirm="Confirm the membership removal.",
+)
+@app_commands.autocomplete(
+    organization_name=admin_organization_autocomplete,
+)
+async def admin_org_removemember(
+    interaction: discord.Interaction,
+    organization_name: str,
+    member: discord.Member,
+    confirm: bool,
+):
+    if not await require_admin(interaction):
+        return
+
+    if not confirm:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP REMOVAL DENIED",
+            reason=(
+                "Membership removal confirmation "
+                "was not provided."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    organization = get_organization_by_name(
+        organization_name
+    )
+
+    if organization is None:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP REMOVAL DENIED",
+            reason=(
+                "Requested organization is not registered."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = remove_organization_member(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            user_id=member.id,
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI MEMBERSHIP REMOVAL DENIED",
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    before = result["before"]
+    after = result["after"]
+
+    organization_status = (
+        format_organization_status(
+            after["organization_active"]
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION MEMBERSHIP LOG",
+        description=(
+            "Type: `ADMIN_ORG_MEMBER_REMOVE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization ID: "
+            f"`{after['organization_id']}`\n"
+            f"Organization: "
+            f"**{after['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            f"Citizen ID: `{member.id}`\n"
+            "Previous Role: "
+            f"**{format_organization_role(before['role'])}**\n"
+            "Previous Membership Status: **Active**\n"
+            "Updated Membership Status: **Inactive**\n"
+            f"Original Joined At: "
+            f"`{after['joined_at']}`\n"
+            f"Removed At: `{after['removed_at']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION MEMBER REMOVED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            f"Organization: "
+            f"**{after['organization_name']}**\n"
+            f"Organization Status: "
+            f"**{organization_status}**\n"
+            f"Citizen: {member.mention}\n"
+            "Previous Role: "
+            f"**{format_organization_role(before['role'])}**\n"
+            "Membership Status: **Inactive**\n\n"
+            "The membership was soft-removed. "
+            "Its original joining date, former role, "
+            "and removal timestamp remain available "
+            "for historical inspection."
         ),
     )
 
