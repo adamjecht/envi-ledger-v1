@@ -153,3 +153,19 @@ ORGANIZATION_ROLE_PERMISSIONS = {
         )
     ),
 }
+
+# -----------------------------
+# V2 Organization Finance
+# -----------------------------
+
+TRANSACTION_ORGANIZATION_DEPOSIT = (
+    "ORGANIZATION_DEPOSIT"
+)
+
+ORGANIZATION_TRANSACTION_MEMBER_DEPOSIT = (
+    "MEMBER_DEPOSIT"
+)
+
+ORGANIZATION_DEPOSIT_REFERENCE_PREFIX = (
+    "ORGDEP"
+)

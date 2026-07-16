@@ -4,6 +4,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from services.economy_service import (
+    ensure_user,
+)
+from services.log_channel_service import (
+    send_ledger_log,
+)
+from services.organization_finance_service import (
+    deposit_user_funds_to_organization,
+)
 from services.organization_membership_service import (
     get_organization_members,
     require_organization_balance_access,
@@ -398,6 +407,156 @@ async def org_members(
 
     view.message = (
         await interaction.original_response()
+    )
+
+@org_group.command(
+    name="deposit",
+    description=(
+        "Deposit personal Nexus Credits "
+        "into an organization."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an active organization name."
+    ),
+    amount=(
+        "The number of personal Nexus Credits "
+        "to deposit."
+    ),
+    reason=(
+        "The required reason for this deposit."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        active_organization_autocomplete
+    ),
+)
+async def org_deposit(
+    interaction: discord.Interaction,
+    organization_name: str,
+    amount: int,
+    reason: str,
+):
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=interaction.user.display_name,
+    )
+
+    organization = _get_active_organization(
+        organization_name
+    )
+
+    if organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION DEPOSIT DENIED",
+            reason=(
+                "Requested organization is not available "
+                "in the active Nexus directory."
+            ),
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = (
+            deposit_user_funds_to_organization(
+                organization_id=(
+                    organization[
+                        "organization_id"
+                    ]
+                ),
+                user_id=interaction.user.id,
+                amount=amount,
+                reason=reason,
+            )
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION DEPOSIT DENIED",
+            reason=str(error),
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    updated_user = result["user"]
+    updated_organization = result[
+        "organization"
+    ]
+    membership = result["membership"]
+    user_transaction = result[
+        "user_transaction"
+    ]
+    organization_transaction = result[
+        "organization_transaction"
+    ]
+    reference_id = result["reference_id"]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ORGANIZATION DEPOSIT LOG",
+        description=(
+            "Type: "
+            f"`{user_transaction['type']}` / "
+            f"`{organization_transaction['transaction_type']}`\n"
+            f"Reference: `{reference_id}`\n"
+            f"Depositor: {interaction.user.mention}\n"
+            f"Depositor ID: `{interaction.user.id}`\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            "Organization ID: "
+            f"`{updated_organization['organization_id']}`\n"
+            f"Amount: **{format_credits(amount)}**\n"
+            f"Reason: {reason.strip()}\n"
+            "Personal Updated Balance: "
+            f"**{format_credits(updated_user['balance'])}**\n"
+            "Organization Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            "Personal Transaction ID: "
+            f"`{user_transaction['transaction_id']}`\n"
+            "Organization Transaction ID: "
+            f"`{organization_transaction['organization_transaction_id']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION DEPOSIT COMPLETE",
+        description=(
+            f"Depositor: {interaction.user.mention}\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            f"Amount Deposited: "
+            f"**{format_credits(amount)}**\n"
+            "Personal Updated Balance: "
+            f"**{format_credits(updated_user['balance'])}**\n"
+            "Organization Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            f"Reference: `{reference_id}`\n\n"
+            "**Reason**\n"
+            f"{reason.strip()}"
+        ),
+    )
+
+    await interaction.followup.send(
+        embed=embed,
+        ephemeral=True,
     )
 
 
