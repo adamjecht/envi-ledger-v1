@@ -10,10 +10,14 @@ from services.organization_membership_service import (
 )
 from utils.constants import (
     ORGANIZATION_DEPOSIT_REFERENCE_PREFIX,
+    ORGANIZATION_PAYMENT_REFERENCE_PREFIX,
     ORGANIZATION_PERMISSION_DEPOSIT,
+    ORGANIZATION_PERMISSION_PAY_ORGANIZATION,
     ORGANIZATION_PERMISSION_PAY_USER,
     ORGANIZATION_REFERENCE_ID_MAX_LENGTH,
     ORGANIZATION_TRANSACTION_MEMBER_DEPOSIT,
+    ORGANIZATION_TRANSACTION_PAYMENT_RECEIVED,
+    ORGANIZATION_TRANSACTION_PAYMENT_SENT,
     ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH,
     ORGANIZATION_TRANSACTION_USER_PAYMENT,
     ORGANIZATION_USER_PAYMENT_REFERENCE_PREFIX,
@@ -198,6 +202,27 @@ def _build_user_payment_reference_id() -> str:
 
     return reference_id
 
+def _build_organization_payment_reference_id() -> str:
+    """
+    Creates a unique reference shared by both organization
+    ledger records.
+    """
+    reference_id = (
+        f"{ORGANIZATION_PAYMENT_REFERENCE_PREFIX}-"
+        f"{uuid.uuid4().hex.upper()}"
+    )
+
+    if (
+        len(reference_id)
+        > ORGANIZATION_REFERENCE_ID_MAX_LENGTH
+    ):
+        raise RuntimeError(
+            "Generated organization transfer reference "
+            "exceeds the supported reference length."
+        )
+
+    return reference_id
+
 def _get_user_row(
     connection: sqlite3.Connection,
     user_id: int,
@@ -323,7 +348,7 @@ def _get_organization_transaction_row(
     transaction_id: int,
 ) -> sqlite3.Row | None:
     """
-    Retrieves one organization-side deposit transaction.
+    Retrieves one organization-side transaction.
     """
 
     return connection.execute(
@@ -1060,5 +1085,408 @@ def pay_organization_funds_to_user(
         ),
         "recipient_balance_before": (
             current_recipient_balance
+        ),
+    }
+
+def pay_organization_funds_to_organization(
+    *,
+    source_organization_id: int,
+    target_organization_id: int,
+    actor_user_id: int,
+    amount: int,
+    reason: str,
+) -> dict:
+    """
+    Atomically transfers Nexus Credits between two
+    organizations.
+
+    The following operations succeed or fail together:
+
+    - Source organization balance decreases
+    - Target organization balance increases
+    - Source organization ledger records the outflow
+    - Target organization ledger records the inflow
+
+    The source and target records share one reference ID.
+
+    Returns:
+
+    - reference_id
+    - actor
+    - membership
+    - source_organization
+    - target_organization
+    - source_transaction
+    - target_transaction
+    - source_balance_before
+    - target_balance_before
+    """
+    clean_source_organization_id = _validate_positive_id(
+        value=source_organization_id,
+        field_name="Source organization ID",
+    )
+    clean_target_organization_id = _validate_positive_id(
+        value=target_organization_id,
+        field_name="Target organization ID",
+    )
+    clean_actor_user_id = _validate_positive_id(
+        value=actor_user_id,
+        field_name="Actor user ID",
+    )
+    clean_amount = _validate_payment_amount(
+        amount
+    )
+    clean_reason = _clean_payment_reason(
+        reason
+    )
+
+    if (
+        clean_source_organization_id
+        == clean_target_organization_id
+    ):
+        raise ValueError(
+            "An organization cannot pay itself."
+        )
+
+    reference_id = (
+        _build_organization_payment_reference_id()
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            actor_row = _get_user_row(
+                connection=connection,
+                user_id=clean_actor_user_id,
+            )
+            if actor_row is None:
+                raise ValueError(
+                    "Paying user is not registered."
+                )
+
+            source_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_source_organization_id
+                    ),
+                )
+            )
+            if source_organization_row is None:
+                raise ValueError(
+                    "Source organization is not registered."
+                )
+
+            if (
+                int(source_organization_row["active"])
+                != 1
+            ):
+                raise ValueError(
+                    "Inactive organizations cannot issue "
+                    "new payments."
+                )
+
+            target_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_target_organization_id
+                    ),
+                )
+            )
+            if target_organization_row is None:
+                raise ValueError(
+                    "Target organization is not registered."
+                )
+
+            if (
+                int(target_organization_row["active"])
+                != 1
+            ):
+                raise ValueError(
+                    "Inactive organizations cannot receive "
+                    "new payments."
+                )
+
+            membership_row = _get_membership_row(
+                connection=connection,
+                organization_id=(
+                    clean_source_organization_id
+                ),
+                user_id=clean_actor_user_id,
+            )
+            if (
+                membership_row is None
+                or int(
+                    membership_row[
+                        "membership_active"
+                    ]
+                )
+                != 1
+            ):
+                raise ValueError(
+                    "You are not an active member "
+                    "of the source organization."
+                )
+
+            if not role_has_permission(
+                role=membership_row["role"],
+                permission=(
+                    ORGANIZATION_PERMISSION_PAY_ORGANIZATION
+                ),
+            ):
+                raise ValueError(
+                    "Your organization role does not "
+                    "permit this action."
+                )
+
+            source_balance_before = int(
+                source_organization_row["balance"]
+            )
+            target_balance_before = int(
+                target_organization_row["balance"]
+            )
+
+            if source_balance_before < clean_amount:
+                raise ValueError(
+                    "Source organization has insufficient "
+                    "Nexus Credits."
+                )
+
+            source_balance_after = (
+                source_balance_before
+                - clean_amount
+            )
+            target_balance_after = (
+                target_balance_before
+                + clean_amount
+            )
+
+            now = utc_now()
+
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    source_balance_after,
+                    now,
+                    clean_source_organization_id,
+                ),
+            )
+
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    target_balance_after,
+                    now,
+                    clean_target_organization_id,
+                ),
+            )
+
+            source_transaction_cursor = (
+                connection.execute(
+                    """
+                    INSERT INTO organization_transactions (
+                        organization_id,
+                        actor_user_id,
+                        target_user_id,
+                        target_organization_id,
+                        transaction_type,
+                        amount,
+                        balance_after,
+                        reason,
+                        related_item_id,
+                        reference_id,
+                        created_at
+                    )
+                    VALUES (
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+                        clean_source_organization_id,
+                        clean_actor_user_id,
+                        clean_target_organization_id,
+                        (
+                            ORGANIZATION_TRANSACTION_PAYMENT_SENT
+                        ),
+                        -clean_amount,
+                        source_balance_after,
+                        clean_reason,
+                        reference_id,
+                        now,
+                    ),
+                )
+            )
+
+            # The received record stores the source
+            # organization as its counterparty.
+            target_transaction_cursor = (
+                connection.execute(
+                    """
+                    INSERT INTO organization_transactions (
+                        organization_id,
+                        actor_user_id,
+                        target_user_id,
+                        target_organization_id,
+                        transaction_type,
+                        amount,
+                        balance_after,
+                        reason,
+                        related_item_id,
+                        reference_id,
+                        created_at
+                    )
+                    VALUES (
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        ?,
+                        NULL,
+                        ?,
+                        ?
+                    )
+                    """,
+                    (
+                        clean_target_organization_id,
+                        clean_actor_user_id,
+                        clean_source_organization_id,
+                        (
+                            ORGANIZATION_TRANSACTION_PAYMENT_RECEIVED
+                        ),
+                        clean_amount,
+                        target_balance_after,
+                        clean_reason,
+                        reference_id,
+                        now,
+                    ),
+                )
+            )
+
+            source_transaction_id = int(
+                source_transaction_cursor.lastrowid
+            )
+            target_transaction_id = int(
+                target_transaction_cursor.lastrowid
+            )
+
+            updated_source_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_source_organization_id
+                    ),
+                )
+            )
+            updated_target_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_target_organization_id
+                    ),
+                )
+            )
+            source_transaction_row = (
+                _get_organization_transaction_row(
+                    connection=connection,
+                    transaction_id=(
+                        source_transaction_id
+                    ),
+                )
+            )
+            target_transaction_row = (
+                _get_organization_transaction_row(
+                    connection=connection,
+                    transaction_id=(
+                        target_transaction_id
+                    ),
+                )
+            )
+
+            if updated_source_organization_row is None:
+                raise RuntimeError(
+                    "Payment changed the source balance "
+                    "but the updated organization could "
+                    "not be retrieved."
+                )
+
+            if updated_target_organization_row is None:
+                raise RuntimeError(
+                    "Payment changed the target balance "
+                    "but the updated organization could "
+                    "not be retrieved."
+                )
+
+            if source_transaction_row is None:
+                raise RuntimeError(
+                    "Payment changed organization balances "
+                    "but the source ledger record could "
+                    "not be retrieved."
+                )
+
+            if target_transaction_row is None:
+                raise RuntimeError(
+                    "Payment changed organization balances "
+                    "but the target ledger record could "
+                    "not be retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Organization-to-organization payment could "
+            "not be completed. No funds were moved."
+        ) from error
+
+    return {
+        "reference_id": reference_id,
+        "actor": dict(actor_row),
+        "membership": dict(membership_row),
+        "source_organization": dict(
+            updated_source_organization_row
+        ),
+        "target_organization": dict(
+            updated_target_organization_row
+        ),
+        "source_transaction": dict(
+            source_transaction_row
+        ),
+        "target_transaction": dict(
+            target_transaction_row
+        ),
+        "source_balance_before": (
+            source_balance_before
+        ),
+        "target_balance_before": (
+            target_balance_before
         ),
     }

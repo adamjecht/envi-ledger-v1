@@ -12,15 +12,18 @@ from services.log_channel_service import (
 )
 from services.organization_finance_service import (
     deposit_user_funds_to_organization,
+    pay_organization_funds_to_organization,
     pay_organization_funds_to_user,
 )
 from services.organization_membership_service import (
     get_organization_members,
     require_organization_balance_access,
+    require_organization_ledger_access,
     require_organization_members_access,
 )
 from services.organization_service import (
     get_organization_by_name,
+    get_organization_transactions,
 )
 from utils.embeds import envi_embed, envi_error
 from utils.formatting import format_credits
@@ -29,6 +32,9 @@ from utils.organization_autocomplete import (
 )
 from utils.organization_members_pagination import (
     OrganizationMembersPaginationView,
+)
+from utils.organization_ledger_pagination import (
+    OrganizationLedgerPaginationView,
 )
 
 
@@ -727,6 +733,291 @@ async def org_payuser(
     await interaction.followup.send(
         embed=embed,
         ephemeral=True,
+    )
+
+@org_group.command(
+    name="payorg",
+    description=(
+        "Transfer Nexus Credits between organizations."
+    ),
+)
+@app_commands.describe(
+    source_organization_name=(
+        "The active organization issuing the payment."
+    ),
+    target_organization_name=(
+        "The active organization receiving the payment."
+    ),
+    amount=(
+        "The number of organization Nexus Credits to pay."
+    ),
+    reason=(
+        "The required reason for this organization payment."
+    ),
+)
+@app_commands.autocomplete(
+    source_organization_name=(
+        active_organization_autocomplete
+    ),
+    target_organization_name=(
+        active_organization_autocomplete
+    ),
+)
+async def org_payorg(
+    interaction: discord.Interaction,
+    source_organization_name: str,
+    target_organization_name: str,
+    amount: int,
+    reason: str,
+):
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=interaction.user.display_name,
+    )
+
+    source_organization = _get_active_organization(
+        source_organization_name
+    )
+    if source_organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION TRANSFER DENIED",
+            reason=(
+                "Source organization is not available "
+                "in the active Nexus directory."
+            ),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    target_organization = _get_active_organization(
+        target_organization_name
+    )
+    if target_organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION TRANSFER DENIED",
+            reason=(
+                "Target organization is not available "
+                "in the active Nexus directory."
+            ),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = (
+            pay_organization_funds_to_organization(
+                source_organization_id=(
+                    source_organization[
+                        "organization_id"
+                    ]
+                ),
+                target_organization_id=(
+                    target_organization[
+                        "organization_id"
+                    ]
+                ),
+                actor_user_id=interaction.user.id,
+                amount=amount,
+                reason=reason,
+            )
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION TRANSFER DENIED",
+            reason=str(error),
+        )
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    updated_source = result[
+        "source_organization"
+    ]
+    updated_target = result[
+        "target_organization"
+    ]
+    membership = result["membership"]
+    source_transaction = result[
+        "source_transaction"
+    ]
+    target_transaction = result[
+        "target_transaction"
+    ]
+    reference_id = result["reference_id"]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ORGANIZATION TRANSFER LOG",
+        description=(
+            "Type: "
+            f"`{source_transaction['transaction_type']}` / "
+            f"`{target_transaction['transaction_type']}`\n"
+            f"Reference: `{reference_id}`\n"
+            f"Authorized By: {interaction.user.mention}\n"
+            f"Actor ID: `{interaction.user.id}`\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            "Source Organization: "
+            f"**{updated_source['name']}**\n"
+            "Source Organization ID: "
+            f"`{updated_source['organization_id']}`\n"
+            "Target Organization: "
+            f"**{updated_target['name']}**\n"
+            "Target Organization ID: "
+            f"`{updated_target['organization_id']}`\n"
+            f"Amount: **{format_credits(amount)}**\n"
+            "Source Previous Balance: "
+            f"**{format_credits(result['source_balance_before'])}**\n"
+            "Source Updated Balance: "
+            f"**{format_credits(updated_source['balance'])}**\n"
+            "Target Previous Balance: "
+            f"**{format_credits(result['target_balance_before'])}**\n"
+            "Target Updated Balance: "
+            f"**{format_credits(updated_target['balance'])}**\n"
+            f"Reason: {source_transaction['reason']}\n"
+            "Source Transaction ID: "
+            f"`{source_transaction['organization_transaction_id']}`\n"
+            "Target Transaction ID: "
+            f"`{target_transaction['organization_transaction_id']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION TRANSFER COMPLETE",
+        description=(
+            "Source Organization: "
+            f"**{updated_source['name']}**\n"
+            "Target Organization: "
+            f"**{updated_target['name']}**\n"
+            f"Authorized By: {interaction.user.mention}\n"
+            "Membership Role: "
+            f"**{_format_organization_role(membership['role'])}**\n"
+            f"Amount Paid: **{format_credits(amount)}**\n"
+            "Source Updated Balance: "
+            f"**{format_credits(updated_source['balance'])}**\n"
+            f"Reference: `{reference_id}`\n\n"
+            "**Reason**\n"
+            f"{source_transaction['reason']}"
+        ),
+    )
+
+    await interaction.followup.send(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@org_group.command(
+    name="ledger",
+    description=(
+        "View an organization's private transaction ledger."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an active organization name."
+    ),
+    record_limit=(
+        "The number of newest records to load, from 1 to 100."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        active_organization_autocomplete
+    ),
+)
+async def org_ledger(
+    interaction: discord.Interaction,
+    organization_name: str,
+    record_limit: app_commands.Range[
+        int,
+        1,
+        100,
+    ] = 25,
+):
+    organization = _get_active_organization(
+        organization_name
+    )
+    if organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION LEDGER DENIED",
+            reason=(
+                "Requested organization is not available "
+                "in the active Nexus directory."
+            ),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        membership = (
+            require_organization_ledger_access(
+                organization_id=(
+                    organization[
+                        "organization_id"
+                    ]
+                ),
+                user_id=interaction.user.id,
+            )
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION LEDGER DENIED",
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        transactions = get_organization_transactions(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            limit=int(record_limit),
+        )
+    except ValueError as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION LEDGER DENIED",
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    view = OrganizationLedgerPaginationView(
+        organization=organization,
+        transactions=transactions,
+        viewer_user_id=interaction.user.id,
+        viewer_role=membership["role"],
+    )
+
+    await interaction.response.send_message(
+        embed=view.build_embed(),
+        view=view,
+        ephemeral=True,
+    )
+
+    view.message = (
+        await interaction.original_response()
     )
 
 async def setup(
