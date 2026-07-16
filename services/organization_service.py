@@ -635,6 +635,177 @@ def deactivate_organization(
         "after": dict(updated_row),
     }
 
+def reactivate_organization(
+    *,
+    name: str,
+    reason: str,
+) -> dict:
+    """
+    Reactivates an inactive organization.
+
+    The organization ID, balance, memberships, and complete
+    transaction history remain unchanged.
+
+    The reason is validated and returned for staff logging.
+    """
+    clean_name = _clean_required_text(
+        value=name,
+        field_name="Organization name",
+        max_length=ORGANIZATION_NAME_MAX_LENGTH,
+    )
+    clean_reason = _clean_required_text(
+        value=reason,
+        field_name="Reactivation reason",
+        max_length=(
+            ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH
+        ),
+    )
+
+    with get_connection() as connection:
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        current_row = connection.execute(
+            """
+            SELECT
+                organization_id,
+                name,
+                organization_type,
+                description,
+                balance,
+                active,
+                created_at,
+                updated_at
+            FROM organizations
+            WHERE name = ? COLLATE NOCASE
+            """,
+            (clean_name,),
+        ).fetchone()
+
+        if current_row is None:
+            raise ValueError(
+                "Requested organization is not registered."
+            )
+
+        if int(current_row["active"]) == 1:
+            raise ValueError(
+                "Organization is already active."
+            )
+
+        before = dict(current_row)
+
+        membership_count_before = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM organization_members
+                WHERE organization_id = ?
+                """,
+                (
+                    before["organization_id"],
+                ),
+            ).fetchone()[0]
+        )
+
+        transaction_count_before = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM organization_transactions
+                WHERE organization_id = ?
+                """,
+                (
+                    before["organization_id"],
+                ),
+            ).fetchone()[0]
+        )
+
+        connection.execute(
+            """
+            UPDATE organizations
+            SET
+                active = 1,
+                updated_at = ?
+            WHERE organization_id = ?
+            """,
+            (
+                utc_now(),
+                before["organization_id"],
+            ),
+        )
+
+        updated_row = _get_organization_row_by_id(
+            connection=connection,
+            organization_id=(
+                before["organization_id"]
+            ),
+        )
+
+        membership_count_after = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM organization_members
+                WHERE organization_id = ?
+                """,
+                (
+                    before["organization_id"],
+                ),
+            ).fetchone()[0]
+        )
+
+        transaction_count_after = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM organization_transactions
+                WHERE organization_id = ?
+                """,
+                (
+                    before["organization_id"],
+                ),
+            ).fetchone()[0]
+        )
+
+        if updated_row is None:
+            raise RuntimeError(
+                "Organization was reactivated but the "
+                "updated record could not be retrieved."
+            )
+
+        if (
+            membership_count_after
+            != membership_count_before
+        ):
+            raise RuntimeError(
+                "Organization reactivation unexpectedly "
+                "changed its membership history."
+            )
+
+        if (
+            transaction_count_after
+            != transaction_count_before
+        ):
+            raise RuntimeError(
+                "Organization reactivation unexpectedly "
+                "changed its transaction history."
+            )
+
+        connection.commit()
+
+    return {
+        "before": before,
+        "after": dict(updated_row),
+        "reason": clean_reason,
+        "membership_count": (
+            membership_count_after
+        ),
+        "transaction_count": (
+            transaction_count_after
+        ),
+    }
+
 def get_organization_by_id(
     organization_id: int,
 ) -> dict | None:

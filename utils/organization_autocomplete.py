@@ -193,3 +193,46 @@ async def admin_organization_autocomplete(
         )
 
     return choices
+
+async def inactive_organization_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """
+    Suggests only inactive organizations for reactivation.
+    """
+    del interaction
+
+    organizations = [
+        organization
+        for organization in get_organizations()
+        if int(organization["active"]) == 0
+    ]
+
+    matches = _find_matching_organizations(
+        organizations=organizations,
+        current=current,
+    )
+
+    choices: list[
+        app_commands.Choice[str]
+    ] = []
+
+    for organization in matches:
+        name = str(organization["name"])
+        organization_type = str(
+            organization["organization_type"]
+        ).title()
+
+        choices.append(
+            app_commands.Choice(
+                name=_shorten_organization_label(
+                    f"{name} — "
+                    f"{organization_type} — "
+                    "Inactive"
+                ),
+                value=name,
+            )
+        )
+
+    return choices

@@ -8,6 +8,7 @@ from utils.constants import (
     TRANSACTION_SHOP_PURCHASE,
     TRANSACTION_TRANSFER_SENT,
     TRANSACTION_WORK,
+    ORGANIZATION_TRANSACTION_ADMIN_REVENUE
 )
 
 
@@ -61,13 +62,39 @@ def get_economy_stats() -> dict:
             ).fetchone()
         )
 
-        total_credits = _first_value(
+        personal_credits = _first_value(
             connection.execute(
                 """
                 SELECT COALESCE(SUM(balance), 0)
                 FROM users
                 """
             ).fetchone()
+        )
+
+        organization_credits = _first_value(
+            connection.execute(
+                """
+                SELECT COALESCE(SUM(balance), 0)
+                FROM organizations
+                """
+            ).fetchone()
+        )
+
+        organization_revenue_generated = (
+            _first_value(
+                connection.execute(
+                    """
+                    SELECT COALESCE(SUM(amount), 0)
+                    FROM organization_transactions
+                    WHERE
+                        transaction_type = ?
+                        AND amount > 0
+                    """,
+                    (
+                        ORGANIZATION_TRANSACTION_ADMIN_REVENUE,
+                    ),
+                ).fetchone()
+            )
         )
 
         richest_user = connection.execute(
@@ -93,6 +120,13 @@ def get_economy_stats() -> dict:
                 """,
                 CREDIT_GENERATING_TYPES,
             ).fetchone()
+        )
+
+        total_credits_generated = (
+            int(credits_generated)
+            + int(
+                organization_revenue_generated
+            )
         )
 
         credits_removed = _first_value(
@@ -202,11 +236,29 @@ def get_economy_stats() -> dict:
 
     return {
         "total_users": int(total_users),
-        "total_credits": int(total_credits),
+        "personal_credits": int(personal_credits),
+        "organization_credits": int(
+            organization_credits
+        ),
+        "total_credits": (
+            int(personal_credits)
+            + int(organization_credits)
+        ),
+        "personal_credits_generated": int(
+            credits_generated
+        ),
+        "organization_revenue_generated": int(
+            organization_revenue_generated
+        ),
+        "credits_generated": int(
+            total_credits_generated
+        ),
         "richest_user": richest_user_data,
-        "credits_generated": int(credits_generated),
         "credits_removed": int(credits_removed),
-        "net_change": int(credits_generated) - int(credits_removed),
+        "net_change": (
+            int(total_credits_generated)
+            - int(credits_removed)
+        ),
         "shop_purchase_count": int(shop_purchase_count),
         "shop_spending_total": int(shop_spending_total),
         "transfer_count": int(transfer_count),

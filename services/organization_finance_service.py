@@ -23,6 +23,10 @@ from utils.constants import (
     ORGANIZATION_USER_PAYMENT_REFERENCE_PREFIX,
     TRANSACTION_ORGANIZATION_DEPOSIT,
     TRANSACTION_ORGANIZATION_USER_PAYMENT_RECEIVED,
+    ORGANIZATION_BALANCE_SET_REFERENCE_PREFIX,
+    ORGANIZATION_REVENUE_REFERENCE_PREFIX,
+    ORGANIZATION_TRANSACTION_ADMIN_BALANCE_SET,
+    ORGANIZATION_TRANSACTION_ADMIN_REVENUE,
 )
 
 
@@ -218,6 +222,67 @@ def _build_organization_payment_reference_id() -> str:
     ):
         raise RuntimeError(
             "Generated organization transfer reference "
+            "exceeds the supported reference length."
+        )
+
+    return reference_id
+
+def _validate_nonnegative_balance(
+    balance: object,
+) -> int:
+    """
+    Validates an exact organization balance.
+    """
+    if (
+        isinstance(balance, bool)
+        or not isinstance(balance, int)
+        or balance < 0
+    ):
+        raise ValueError(
+            "Organization balance cannot be negative."
+        )
+
+    return balance
+
+
+def _build_admin_revenue_reference_id() -> str:
+    """
+    Creates a unique reference for generated organization
+    revenue.
+    """
+    reference_id = (
+        f"{ORGANIZATION_REVENUE_REFERENCE_PREFIX}-"
+        f"{uuid.uuid4().hex.upper()}"
+    )
+
+    if (
+        len(reference_id)
+        > ORGANIZATION_REFERENCE_ID_MAX_LENGTH
+    ):
+        raise RuntimeError(
+            "Generated organization revenue reference "
+            "exceeds the supported reference length."
+        )
+
+    return reference_id
+
+
+def _build_admin_balance_set_reference_id() -> str:
+    """
+    Creates a unique reference for an administrative
+    organization balance correction.
+    """
+    reference_id = (
+        f"{ORGANIZATION_BALANCE_SET_REFERENCE_PREFIX}-"
+        f"{uuid.uuid4().hex.upper()}"
+    )
+
+    if (
+        len(reference_id)
+        > ORGANIZATION_REFERENCE_ID_MAX_LENGTH
+    ):
+        raise RuntimeError(
+            "Generated organization balance reference "
             "exceeds the supported reference length."
         )
 
@@ -1489,4 +1554,391 @@ def pay_organization_funds_to_organization(
         "target_balance_before": (
             target_balance_before
         ),
+    }
+
+def add_admin_organization_revenue(
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    amount: int,
+    reason: str,
+) -> dict:
+    """
+    Atomically creates deliberate organization revenue.
+
+    Revenue is newly generated currency, not a transfer from
+    another existing balance.
+
+    The organization must be active.
+
+    Returns:
+
+    - reference_id
+    - actor
+    - organization
+    - organization_transaction
+    - balance_before
+    """
+    clean_organization_id = _validate_positive_id(
+        value=organization_id,
+        field_name="Organization ID",
+    )
+    clean_actor_user_id = _validate_positive_id(
+        value=actor_user_id,
+        field_name="Actor User ID",
+    )
+    clean_amount = _validate_payment_amount(
+        amount
+    )
+    clean_reason = _clean_payment_reason(
+        reason
+    )
+    reference_id = (
+        _build_admin_revenue_reference_id()
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            actor_row = _get_user_row(
+                connection=connection,
+                user_id=clean_actor_user_id,
+            )
+            if actor_row is None:
+                raise ValueError(
+                    "Administrative operator is not registered."
+                )
+
+            organization_row = _get_organization_row(
+                connection=connection,
+                organization_id=clean_organization_id,
+            )
+            if organization_row is None:
+                raise ValueError(
+                    "Requested organization is not registered."
+                )
+
+            if int(organization_row["active"]) != 1:
+                raise ValueError(
+                    "Inactive organizations cannot receive "
+                    "new administrative revenue."
+                )
+
+            balance_before = int(
+                organization_row["balance"]
+            )
+            balance_after = (
+                balance_before
+                + clean_amount
+            )
+            now = utc_now()
+
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    balance_after,
+                    now,
+                    clean_organization_id,
+                ),
+            )
+
+            transaction_cursor = connection.execute(
+                """
+                INSERT INTO organization_transactions (
+                    organization_id,
+                    actor_user_id,
+                    target_user_id,
+                    target_organization_id,
+                    transaction_type,
+                    amount,
+                    balance_after,
+                    reason,
+                    related_item_id,
+                    reference_id,
+                    created_at
+                )
+                VALUES (
+                    ?,
+                    ?,
+                    NULL,
+                    NULL,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    NULL,
+                    ?,
+                    ?
+                )
+                """,
+                (
+                    clean_organization_id,
+                    clean_actor_user_id,
+                    (
+                        ORGANIZATION_TRANSACTION_ADMIN_REVENUE
+                    ),
+                    clean_amount,
+                    balance_after,
+                    clean_reason,
+                    reference_id,
+                    now,
+                ),
+            )
+
+            transaction_id = int(
+                transaction_cursor.lastrowid
+            )
+
+            updated_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_organization_id
+                    ),
+                )
+            )
+            transaction_row = (
+                _get_organization_transaction_row(
+                    connection=connection,
+                    transaction_id=transaction_id,
+                )
+            )
+
+            if updated_organization_row is None:
+                raise RuntimeError(
+                    "Revenue changed the organization "
+                    "balance but the updated organization "
+                    "could not be retrieved."
+                )
+
+            if transaction_row is None:
+                raise RuntimeError(
+                    "Revenue changed the organization "
+                    "balance but its ledger record could "
+                    "not be retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Administrative organization revenue could "
+            "not be completed. No credits were created."
+        ) from error
+
+    return {
+        "reference_id": reference_id,
+        "actor": dict(actor_row),
+        "organization": dict(
+            updated_organization_row
+        ),
+        "organization_transaction": dict(
+            transaction_row
+        ),
+        "balance_before": balance_before,
+    }
+
+def set_admin_organization_balance(
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    new_balance: int,
+    reason: str,
+) -> dict:
+    """
+    Atomically sets an organization balance exactly.
+
+    This is an administrative correction, not ordinary
+    revenue. Active and inactive organizations may be
+    corrected, but their active status is preserved.
+
+    Returns:
+
+    - reference_id
+    - actor
+    - organization
+    - organization_transaction
+    - balance_before
+    - balance_delta
+    """
+    clean_organization_id = _validate_positive_id(
+        value=organization_id,
+        field_name="Organization ID",
+    )
+    clean_actor_user_id = _validate_positive_id(
+        value=actor_user_id,
+        field_name="Actor User ID",
+    )
+    clean_new_balance = (
+        _validate_nonnegative_balance(
+            new_balance
+        )
+    )
+    clean_reason = _clean_payment_reason(
+        reason
+    )
+    reference_id = (
+        _build_admin_balance_set_reference_id()
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            actor_row = _get_user_row(
+                connection=connection,
+                user_id=clean_actor_user_id,
+            )
+            if actor_row is None:
+                raise ValueError(
+                    "Administrative operator is not registered."
+                )
+
+            organization_row = _get_organization_row(
+                connection=connection,
+                organization_id=clean_organization_id,
+            )
+            if organization_row is None:
+                raise ValueError(
+                    "Requested organization is not registered."
+                )
+
+            balance_before = int(
+                organization_row["balance"]
+            )
+
+            if balance_before == clean_new_balance:
+                raise ValueError(
+                    "Organization already has the requested "
+                    "balance."
+                )
+
+            balance_delta = (
+                clean_new_balance
+                - balance_before
+            )
+            now = utc_now()
+
+            connection.execute(
+                """
+                UPDATE organizations
+                SET
+                    balance = ?,
+                    updated_at = ?
+                WHERE organization_id = ?
+                """,
+                (
+                    clean_new_balance,
+                    now,
+                    clean_organization_id,
+                ),
+            )
+
+            transaction_cursor = connection.execute(
+                """
+                INSERT INTO organization_transactions (
+                    organization_id,
+                    actor_user_id,
+                    target_user_id,
+                    target_organization_id,
+                    transaction_type,
+                    amount,
+                    balance_after,
+                    reason,
+                    related_item_id,
+                    reference_id,
+                    created_at
+                )
+                VALUES (
+                    ?,
+                    ?,
+                    NULL,
+                    NULL,
+                    ?,
+                    ?,
+                    ?,
+                    ?,
+                    NULL,
+                    ?,
+                    ?
+                )
+                """,
+                (
+                    clean_organization_id,
+                    clean_actor_user_id,
+                    (
+                        ORGANIZATION_TRANSACTION_ADMIN_BALANCE_SET
+                    ),
+                    balance_delta,
+                    clean_new_balance,
+                    clean_reason,
+                    reference_id,
+                    now,
+                ),
+            )
+
+            transaction_id = int(
+                transaction_cursor.lastrowid
+            )
+
+            updated_organization_row = (
+                _get_organization_row(
+                    connection=connection,
+                    organization_id=(
+                        clean_organization_id
+                    ),
+                )
+            )
+            transaction_row = (
+                _get_organization_transaction_row(
+                    connection=connection,
+                    transaction_id=transaction_id,
+                )
+            )
+
+            if updated_organization_row is None:
+                raise RuntimeError(
+                    "Balance correction changed the "
+                    "organization balance but the updated "
+                    "organization could not be retrieved."
+                )
+
+            if transaction_row is None:
+                raise RuntimeError(
+                    "Balance correction changed the "
+                    "organization balance but its ledger "
+                    "record could not be retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Administrative organization balance correction "
+            "could not be completed. The balance was not "
+            "changed."
+        ) from error
+
+    return {
+        "reference_id": reference_id,
+        "actor": dict(actor_row),
+        "organization": dict(
+            updated_organization_row
+        ),
+        "organization_transaction": dict(
+            transaction_row
+        ),
+        "balance_before": balance_before,
+        "balance_delta": balance_delta,
     }

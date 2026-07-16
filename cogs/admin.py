@@ -10,6 +10,10 @@ from services.economy_service import (
 )
 from services.economy_stats_service import get_economy_stats
 from services.economy_report_service import build_economy_report
+from services.organization_finance_service import (
+    add_admin_organization_revenue,
+    set_admin_organization_balance,
+)
 from services.item_audit_service import get_item_audit
 from services.log_channel_service import send_ledger_log
 from services.maintenance_service import clear_user_cooldowns, reset_user_data
@@ -22,6 +26,7 @@ from services.organization_service import (
     create_organization,
     deactivate_organization,
     get_organization_by_name,
+    reactivate_organization,
     update_organization,
 )
 from services.shop_service import (
@@ -58,6 +63,7 @@ from utils.formatting import format_credits
 from utils.organization_autocomplete import (
     active_organization_autocomplete,
     admin_organization_autocomplete,
+    inactive_organization_autocomplete,
 )
 
 
@@ -549,6 +555,392 @@ async def admin_org_deactivate(
             "New organization financial activity is now blocked. "
             "The organization record, balance, memberships, "
             "and transaction history were not deleted."
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="reactivate",
+    description=(
+        "Reactivate an inactive ENVI Ledger organization."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an inactive organization name."
+    ),
+    reason=(
+        "The required reason for reactivation."
+    ),
+    confirm=(
+        "Confirm that this organization should be reactivated."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        inactive_organization_autocomplete
+    ),
+)
+async def admin_org_reactivate(
+    interaction: discord.Interaction,
+    organization_name: str,
+    reason: str,
+    confirm: bool,
+):
+    if not await require_admin(interaction):
+        return
+
+    if not confirm:
+        embed = envi_error(
+            title=(
+                "ENVI ORGANIZATION REACTIVATION DENIED"
+            ),
+            reason=(
+                "Reactivation confirmation was not provided."
+            ),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    try:
+        result = reactivate_organization(
+            name=organization_name,
+            reason=reason,
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title=(
+                "ENVI ORGANIZATION REACTIVATION DENIED"
+            ),
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    before = result["before"]
+    organization = result["after"]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="ENVI ADMIN ORGANIZATION LOG",
+        description=(
+            "Type: `ADMIN_ORG_REACTIVATE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Operator ID: `{interaction.user.id}`\n"
+            "Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Previous Status: **Inactive**\n"
+            "Updated Status: **Active**\n"
+            "Preserved Membership Records: "
+            f"**{result['membership_count']}**\n"
+            "Preserved Transaction Records: "
+            f"**{result['transaction_count']}**\n"
+            f"Reason: {result['reason']}\n\n"
+            "_No balance, membership, or transaction "
+            "history was changed._"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION REACTIVATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            "Organization ID: "
+            f"`{organization['organization_id']}`\n"
+            f"Organization: **{organization['name']}**\n"
+            "Organization Type: "
+            f"**{format_organization_type(organization['organization_type'])}**\n"
+            "Preserved Balance: "
+            f"**{format_credits(organization['balance'])}**\n"
+            "Previous Status: **Inactive**\n"
+            "Updated Status: **Active**\n\n"
+            "**Reason**\n"
+            f"{result['reason']}\n\n"
+            "Existing memberships and financial history "
+            "remain attached to the organization."
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="revenue",
+    description=(
+        "Create controlled revenue for an active organization."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an active organization name."
+    ),
+    amount=(
+        "The amount of newly generated organization revenue."
+    ),
+    reason=(
+        "The required event or institutional revenue reason."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        active_organization_autocomplete
+    ),
+)
+async def admin_org_revenue(
+    interaction: discord.Interaction,
+    organization_name: str,
+    amount: int,
+    reason: str,
+):
+    if not await require_admin(interaction):
+        return
+
+    organization = get_organization_by_name(
+        organization_name
+    )
+    if organization is None:
+        embed = envi_error(
+            title="ENVI ORGANIZATION REVENUE DENIED",
+            reason=(
+                "Requested organization is not registered."
+            ),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=interaction.user.display_name,
+    )
+
+    try:
+        result = add_admin_organization_revenue(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            actor_user_id=interaction.user.id,
+            amount=amount,
+            reason=reason,
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title="ENVI ORGANIZATION REVENUE DENIED",
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    updated_organization = result[
+        "organization"
+    ]
+    transaction = result[
+        "organization_transaction"
+    ]
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title=(
+            "ENVI ADMIN ORGANIZATION FINANCE LOG"
+        ),
+        description=(
+            "Type: "
+            f"`{transaction['transaction_type']}`\n"
+            f"Reference: `{result['reference_id']}`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Operator ID: `{interaction.user.id}`\n"
+            "Organization ID: "
+            f"`{updated_organization['organization_id']}`\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            "Organization Status: **Active**\n"
+            "Revenue Created: "
+            f"**{format_credits(amount)}**\n"
+            "Previous Balance: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            f"Reason: {transaction['reason']}\n"
+            "Organization Transaction ID: "
+            f"`{transaction['organization_transaction_id']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION REVENUE CREATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            "Revenue Created: "
+            f"**{format_credits(amount)}**\n"
+            "Previous Balance: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            f"Reference: `{result['reference_id']}`\n\n"
+            "**Reason**\n"
+            f"{transaction['reason']}"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_org_group.command(
+    name="setbalance",
+    description=(
+        "Set an organization account balance exactly."
+    ),
+)
+@app_commands.describe(
+    organization_name=(
+        "Start typing an active or inactive organization name."
+    ),
+    balance=(
+        "The exact replacement organization balance."
+    ),
+    reason=(
+        "The required reason for this balance correction."
+    ),
+)
+@app_commands.autocomplete(
+    organization_name=(
+        admin_organization_autocomplete
+    ),
+)
+async def admin_org_setbalance(
+    interaction: discord.Interaction,
+    organization_name: str,
+    balance: int,
+    reason: str,
+):
+    if not await require_admin(interaction):
+        return
+
+    organization = get_organization_by_name(
+        organization_name
+    )
+    if organization is None:
+        embed = envi_error(
+            title=(
+                "ENVI ORGANIZATION BALANCE SET DENIED"
+            ),
+            reason=(
+                "Requested organization is not registered."
+            ),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=interaction.user.display_name,
+    )
+
+    try:
+        result = set_admin_organization_balance(
+            organization_id=(
+                organization["organization_id"]
+            ),
+            actor_user_id=interaction.user.id,
+            new_balance=balance,
+            reason=reason,
+        )
+    except (ValueError, RuntimeError) as error:
+        embed = envi_error(
+            title=(
+                "ENVI ORGANIZATION BALANCE SET DENIED"
+            ),
+            reason=str(error),
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    updated_organization = result[
+        "organization"
+    ]
+    transaction = result[
+        "organization_transaction"
+    ]
+    status = format_organization_status(
+        updated_organization["active"]
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title=(
+            "ENVI ADMIN ORGANIZATION FINANCE LOG"
+        ),
+        description=(
+            "Type: "
+            f"`{transaction['transaction_type']}`\n"
+            f"Reference: `{result['reference_id']}`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Operator ID: `{interaction.user.id}`\n"
+            "Organization ID: "
+            f"`{updated_organization['organization_id']}`\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            f"Organization Status: **{status}**\n"
+            "Previous Balance: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            "Net Correction: "
+            f"**{format_transaction_amount(result['balance_delta'])}**\n"
+            f"Reason: {transaction['reason']}\n"
+            "Organization Transaction ID: "
+            f"`{transaction['organization_transaction_id']}`"
+        ),
+    )
+
+    embed = envi_embed(
+        title="ENVI ORGANIZATION BALANCE UPDATED",
+        description=(
+            f"Operator: {interaction.user.mention}\n"
+            "Organization: "
+            f"**{updated_organization['name']}**\n"
+            f"Organization Status: **{status}**\n"
+            "Previous Balance: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Updated Balance: "
+            f"**{format_credits(updated_organization['balance'])}**\n"
+            "Net Correction: "
+            f"**{format_transaction_amount(result['balance_delta'])}**\n"
+            f"Reference: `{result['reference_id']}`\n\n"
+            "**Reason**\n"
+            f"{transaction['reason']}"
         ),
     )
 
