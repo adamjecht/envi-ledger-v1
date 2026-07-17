@@ -17,6 +17,11 @@ V2_SHOP_SELLER_MIGRATION_VERSION = 210
 V2_SHOP_SELLER_MIGRATION_NAME = (
     "add_v2_shop_seller_organization"
 )
+V2_CITATION_MIGRATION_VERSION = 220
+
+V2_CITATION_MIGRATION_NAME = (
+    "create_v2_citation_schema"
+)
 
 
 MigrationFunction = Callable[[sqlite3.Cursor], None]
@@ -429,6 +434,145 @@ def apply_v2_shop_seller_migration(
         """
     )
 
+def apply_v2_citation_migration(
+    cursor: sqlite3.Cursor,
+) -> None:
+    """
+    Creates the V2 Black Badge citation ledger.
+
+    The schema enforces valid OPEN, PAID, and VOID
+    records while preserving all existing economy data.
+    """
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS citations (
+            citation_id INTEGER
+                PRIMARY KEY AUTOINCREMENT,
+
+            user_id INTEGER NOT NULL,
+            issuer_user_id INTEGER NOT NULL,
+
+            amount INTEGER NOT NULL
+                CHECK (amount > 0),
+
+            reason TEXT NOT NULL,
+
+            status TEXT NOT NULL
+                DEFAULT 'OPEN'
+                CHECK (
+                    status IN (
+                        'OPEN',
+                        'PAID',
+                        'VOID'
+                    )
+                ),
+
+            issued_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+
+            paid_at TEXT,
+            voided_at TEXT,
+
+            paid_by_user_id INTEGER,
+            voided_by_user_id INTEGER,
+
+            payment_transaction_id INTEGER
+                UNIQUE,
+
+            administrative_notes TEXT NOT NULL
+                DEFAULT '',
+
+            CHECK (
+                (
+                    status = 'OPEN'
+                    AND paid_at IS NULL
+                    AND voided_at IS NULL
+                    AND paid_by_user_id IS NULL
+                    AND voided_by_user_id IS NULL
+                    AND payment_transaction_id IS NULL
+                )
+                OR
+                (
+                    status = 'PAID'
+                    AND paid_at IS NOT NULL
+                    AND voided_at IS NULL
+                    AND paid_by_user_id IS NOT NULL
+                    AND voided_by_user_id IS NULL
+                    AND payment_transaction_id
+                        IS NOT NULL
+                )
+                OR
+                (
+                    status = 'VOID'
+                    AND paid_at IS NULL
+                    AND voided_at IS NOT NULL
+                    AND paid_by_user_id IS NULL
+                    AND voided_by_user_id IS NOT NULL
+                    AND payment_transaction_id IS NULL
+                )
+            ),
+
+            FOREIGN KEY (user_id)
+                REFERENCES users(user_id)
+                ON UPDATE CASCADE
+                ON DELETE RESTRICT,
+
+            FOREIGN KEY (issuer_user_id)
+                REFERENCES users(user_id)
+                ON UPDATE CASCADE
+                ON DELETE RESTRICT,
+
+            FOREIGN KEY (paid_by_user_id)
+                REFERENCES users(user_id)
+                ON UPDATE CASCADE
+                ON DELETE RESTRICT,
+
+            FOREIGN KEY (voided_by_user_id)
+                REFERENCES users(user_id)
+                ON UPDATE CASCADE
+                ON DELETE RESTRICT,
+
+            FOREIGN KEY (payment_transaction_id)
+                REFERENCES transactions(transaction_id)
+                ON UPDATE CASCADE
+                ON DELETE RESTRICT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+            idx_citations_user_status_issued
+        ON citations (
+            user_id,
+            status,
+            issued_at DESC
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+            idx_citations_status_issued
+        ON citations (
+            status,
+            issued_at DESC
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS
+            idx_citations_issuer
+        ON citations (
+            issuer_user_id
+        )
+        """
+    )
+
 MIGRATIONS: tuple[
     tuple[
         int,
@@ -451,6 +595,11 @@ MIGRATIONS: tuple[
         V2_SHOP_SELLER_MIGRATION_VERSION,
         V2_SHOP_SELLER_MIGRATION_NAME,
         apply_v2_shop_seller_migration,
+    ),
+    (
+        V2_CITATION_MIGRATION_VERSION,
+        V2_CITATION_MIGRATION_NAME,
+        apply_v2_citation_migration,
     ),
 )
 

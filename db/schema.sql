@@ -53,6 +53,119 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS citations (
+    citation_id INTEGER
+        PRIMARY KEY AUTOINCREMENT,
+
+    user_id INTEGER NOT NULL,
+    issuer_user_id INTEGER NOT NULL,
+
+    amount INTEGER NOT NULL
+        CHECK (amount > 0),
+
+    reason TEXT NOT NULL,
+
+    status TEXT NOT NULL
+        DEFAULT 'OPEN'
+        CHECK (
+            status IN (
+                'OPEN',
+                'PAID',
+                'VOID'
+            )
+        ),
+
+    issued_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+
+    paid_at TEXT,
+    voided_at TEXT,
+
+    paid_by_user_id INTEGER,
+    voided_by_user_id INTEGER,
+
+    payment_transaction_id INTEGER
+        UNIQUE,
+
+    administrative_notes TEXT NOT NULL
+        DEFAULT '',
+
+    CHECK (
+        (
+            status = 'OPEN'
+            AND paid_at IS NULL
+            AND voided_at IS NULL
+            AND paid_by_user_id IS NULL
+            AND voided_by_user_id IS NULL
+            AND payment_transaction_id IS NULL
+        )
+        OR
+        (
+            status = 'PAID'
+            AND paid_at IS NOT NULL
+            AND voided_at IS NULL
+            AND paid_by_user_id IS NOT NULL
+            AND voided_by_user_id IS NULL
+            AND payment_transaction_id IS NOT NULL
+        )
+        OR
+        (
+            status = 'VOID'
+            AND paid_at IS NULL
+            AND voided_at IS NOT NULL
+            AND paid_by_user_id IS NULL
+            AND voided_by_user_id IS NOT NULL
+            AND payment_transaction_id IS NULL
+        )
+    ),
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    FOREIGN KEY (issuer_user_id)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    FOREIGN KEY (paid_by_user_id)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    FOREIGN KEY (voided_by_user_id)
+        REFERENCES users(user_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    FOREIGN KEY (payment_transaction_id)
+        REFERENCES transactions(transaction_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_citations_user_status_issued
+ON citations (
+    user_id,
+    status,
+    issued_at DESC
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_citations_status_issued
+ON citations (
+    status,
+    issued_at DESC
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_citations_issuer
+ON citations (
+    issuer_user_id
+);
+
 CREATE TABLE IF NOT EXISTS organizations (
     organization_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
