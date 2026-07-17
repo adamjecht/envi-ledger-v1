@@ -13,7 +13,10 @@ from services.economy_service import (
     remove_credits,
 )
 from services.shop_service import (
+    format_item_purchase_status,
     format_item_seller,
+    format_item_seller_mode,
+    format_item_settlement,
     format_stock,
     get_active_shop_items,
 )
@@ -472,23 +475,40 @@ class EconomyCog(commands.Cog):
         seller_text = format_item_seller(
             item
         )
+        seller_mode = (
+            format_item_seller_mode(
+                item
+            )
+        )
+        purchase_status = (
+            format_item_purchase_status(
+                item
+            )
+        )
+        settlement_type = (
+            format_item_settlement(
+                item
+            )
+        )
         remaining_stock_text = format_stock(
             result["remaining_stock"]
         )
 
         if seller_organization is None:
-            settlement_type = (
-                "System Exchange Credit Sink"
-            )
             seller_finance_log = (
-                "Seller Balance: `Not Applicable`\n"
-                "Organization Transaction: `None`"
+                "Seller Organization ID: "
+                "`Not Applicable`\n"
+                "Seller Balance: "
+                "`Not Applicable`\n"
+                "Organization Transaction: "
+                "`None`\n"
+                "Economic Treatment: "
+                "`Credits Removed from Circulation`"
             )
         else:
-            settlement_type = (
-                "Organization Commercial Transfer"
-            )
             seller_finance_log = (
+                "Seller Organization ID: "
+                f"`{seller_organization['organization_id']}`\n"
                 "Seller Previous Balance: "
                 f"**{format_credits(result['seller_balance_before'])}**\n"
                 "Seller Updated Balance: "
@@ -496,7 +516,9 @@ class EconomyCog(commands.Cog):
                 "Organization Transaction ID: "
                 f"`{organization_transaction['organization_transaction_id']}`\n"
                 "Organization Transaction Type: "
-                f"`{organization_transaction['transaction_type']}`"
+                f"`{organization_transaction['transaction_type']}`\n"
+                "Economic Treatment: "
+                "`Buyer-to-Organization Transfer`"
             )
 
         await send_ledger_log(
@@ -506,7 +528,9 @@ class EconomyCog(commands.Cog):
                 "Personal Transaction Type: "
                 f"`{personal_transaction['type']}`\n"
                 f"Reference: `{result['reference_id']}`\n"
+                f"Ownership: **{seller_mode}**\n"
                 f"Settlement: **{settlement_type}**\n"
+                f"Purchase Status: **{purchase_status}**\n"
                 f"Citizen: {user.mention}\n"
                 f"Citizen ID: `{user.id}`\n"
                 f"Item ID: `{item['item_id']}`\n"
@@ -536,6 +560,8 @@ class EconomyCog(commands.Cog):
                 f"Citizen: {user.mention}\n"
                 f"Item: **{item['name']}**\n"
                 f"Seller: **{seller_text}**\n"
+                f"Purchase Type: **{seller_mode}**\n"
+                f"Settlement: **{settlement_type}**\n"
                 f"Category: `{item['category']}`"
                 f" | Rarity: `{item['rarity']}`\n"
                 f"Quantity: **{result['quantity']}**\n"

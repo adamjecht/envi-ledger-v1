@@ -32,7 +32,10 @@ from services.organization_service import (
 from services.shop_service import (
     create_shop_item,
     deactivate_shop_item,
+    format_item_purchase_status,
     format_item_seller,
+    format_item_seller_mode,
+    format_item_settlement,
     format_stock,
     restock_limited_item,
     update_shop_item,
@@ -2054,6 +2057,22 @@ async def admin_iteminfo(
         item
     )
 
+    seller_mode = (
+        format_item_seller_mode(
+            item
+        )
+    )
+    purchase_status = (
+        format_item_purchase_status(
+            item
+        )
+    )
+    settlement = (
+        format_item_settlement(
+            item
+        )
+    )
+
     embed = envi_embed(
         title="ENVI ADMIN ITEM AUDIT",
         description=(
@@ -2063,12 +2082,16 @@ async def admin_iteminfo(
     )
 
     embed.add_field(
-        name="Identity",
+        name="Identity & Seller",
         value=(
             f"Item ID: `{item['item_id']}`\n"
             f"Name: **{item['name']}**\n"
-            f"Status: **{active_status}**\n"
-            f"Seller: **{seller_text}**"
+            f"Item Status: **{active_status}**\n"
+            f"Seller: **{seller_text}**\n"
+            f"Ownership: **{seller_mode}**\n"
+            f"Purchase Status: "
+            f"**{purchase_status}**\n"
+            f"Settlement: **{settlement}**"
         ),
         inline=False,
     )
@@ -2116,12 +2139,20 @@ async def admin_iteminfo(
     )
 
     embed.add_field(
-        name="Recorded Purchase Activity",
+        name="Commerce Activity",
         value=(
-            f"Purchase Transactions: **{item['purchase_count']}**\n"
-            f"Units Purchased: **{item['units_purchased']}**\n"
-            "_Statistics are matched to the item's current "
-            "registered name._"
+            "Purchase Records: "
+            f"**{item['purchase_count']}**\n"
+            "Units Purchased: "
+            f"**{item['units_purchased']}**\n"
+            "System Purchase Records: "
+            f"**{item['system_purchase_count']}**\n"
+            "Commercial Purchase Records: "
+            f"**{item['commercial_purchase_count']}**\n"
+            "Organization Sale Records: "
+            f"**{item['commercial_sale_count']}**\n"
+            "Commercial Revenue: "
+            f"**{format_credits(item['commercial_revenue_total'])}**"
         ),
         inline=False,
     )

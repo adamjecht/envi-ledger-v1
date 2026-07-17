@@ -260,32 +260,73 @@ def _validate_seller_organization(
     return dict(row)
 
 
+def get_item_seller_mode(
+    item: dict,
+) -> str:
+    """
+    Returns the stored item-ownership mode.
+    """
+    if item.get("seller_org_id") is None:
+        return "SYSTEM"
+
+    return "ORGANIZATION"
+
+
+def format_item_seller_name(
+    item: dict,
+) -> str:
+    """
+    Returns only the public-facing seller name.
+    """
+    if get_item_seller_mode(item) == "SYSTEM":
+        return "ENVI Commercial Exchange"
+
+    seller_org_id = item.get(
+        "seller_org_id"
+    )
+    seller_name = item.get(
+        "seller_org_name"
+    )
+
+    if (
+        seller_name is not None
+        and str(seller_name).strip()
+    ):
+        return str(seller_name).strip()
+
+    return (
+        f"Organization #{seller_org_id}"
+        if seller_org_id is not None
+        else "Unknown Organization"
+    )
+
+
 def format_item_seller(
     item: dict,
 ) -> str:
     """
-    Formats item seller metadata for staff output.
+    Formats complete seller metadata for staff output.
     """
-    seller_org_id = item.get(
-        "seller_org_id"
-    )
-
-    if seller_org_id is None:
+    if get_item_seller_mode(item) == "SYSTEM":
         return (
             "ENVI Commercial Exchange "
             "(`System-Owned`)"
         )
 
-    seller_name = (
-        str(item.get("seller_org_name")).strip()
-        if item.get("seller_org_name")
-        else "Unknown Organization"
+    seller_org_id = item.get(
+        "seller_org_id"
+    )
+    seller_name = format_item_seller_name(
+        item
     )
 
     seller_status = (
         "Active"
         if int(
-            item.get("seller_org_active", 0)
+            item.get(
+                "seller_org_active",
+                0,
+            )
         )
         == 1
         else "Inactive"
@@ -296,6 +337,59 @@ def format_item_seller(
         f"(`Organization #{seller_org_id}`, "
         f"{seller_status})"
     )
+
+
+def format_item_seller_mode(
+    item: dict,
+) -> str:
+    """
+    Formats ownership mode for public and staff displays.
+    """
+    if get_item_seller_mode(item) == "SYSTEM":
+        return "System-Owned"
+
+    return "Organization-Owned"
+
+
+def format_item_purchase_status(
+    item: dict,
+) -> str:
+    """
+    Formats whether an active item can currently settle.
+
+    System-owned items do not depend on an organization.
+    """
+    if get_item_seller_mode(item) == "SYSTEM":
+        return "Available"
+
+    if not item.get("seller_org_name"):
+        return (
+            "Unavailable — Seller Record Missing"
+        )
+
+    if int(
+        item.get(
+            "seller_org_active",
+            0,
+        )
+    ) != 1:
+        return (
+            "Unavailable — Seller Inactive"
+        )
+
+    return "Available"
+
+
+def format_item_settlement(
+    item: dict,
+) -> str:
+    """
+    Describes the item's purchase-settlement behavior.
+    """
+    if get_item_seller_mode(item) == "SYSTEM":
+        return "System Exchange Credit Sink"
+
+    return "Organization Commercial Revenue"
 
 def format_stock(stock: int | None) -> str:
     """

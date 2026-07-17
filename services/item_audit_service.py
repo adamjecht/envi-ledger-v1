@@ -1,5 +1,6 @@
 from db.database import get_connection
 from utils.constants import (
+    ORGANIZATION_TRANSACTION_SHOP_SALE,
     TRANSACTION_COMMERCIAL_SHOP_PURCHASE,
     TRANSACTION_SHOP_PURCHASE,
 )
@@ -136,11 +137,17 @@ def get_item_audit(item_name: str) -> dict | None:
 
     purchase_count = 0
     units_purchased = 0
+    system_purchase_count = 0
+    commercial_purchase_count = 0
 
     for purchase_row in purchase_rows:
         quantity = _parse_purchase_quantity(
-            reason=str(purchase_row["reason"]),
-            item_name=str(item["name"]),
+            reason=str(
+                purchase_row["reason"]
+            ),
+            item_name=str(
+                item["name"]
+            ),
         )
 
         if quantity is None:
@@ -149,9 +156,70 @@ def get_item_audit(item_name: str) -> dict | None:
         purchase_count += 1
         units_purchased += quantity
 
-    item["holder_count"] = int(ownership_row["holder_count"])
-    item["total_owned"] = int(ownership_row["total_owned"])
-    item["purchase_count"] = purchase_count
-    item["units_purchased"] = units_purchased
+        if (
+            purchase_row["type"]
+            == TRANSACTION_COMMERCIAL_SHOP_PURCHASE
+        ):
+            commercial_purchase_count += 1
+        else:
+            system_purchase_count += 1
+
+    item["holder_count"] = int(
+        ownership_row["holder_count"]
+    )
+    item["total_owned"] = int(
+        ownership_row["total_owned"]
+    )
+    item["purchase_count"] = (
+        purchase_count
+    )
+    item["units_purchased"] = (
+        units_purchased
+    )
+
+    with get_connection() as connection:
+        commercial_sale_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS sale_count,
+                COALESCE(
+                    SUM(amount),
+                    0
+                ) AS revenue_total
+            FROM organization_transactions
+            WHERE
+                related_item_id = ?
+                AND transaction_type = ?
+                AND amount > 0
+            """,
+            (
+                item["item_id"],
+                ORGANIZATION_TRANSACTION_SHOP_SALE,
+            ),
+        ).fetchone()
+
+    commercial_sale_count = int(
+        commercial_sale_row[
+            "sale_count"
+        ]
+    )
+    commercial_revenue_total = int(
+        commercial_sale_row[
+            "revenue_total"
+        ]
+    )
+
+    item["system_purchase_count"] = (
+        system_purchase_count
+    )
+    item["commercial_purchase_count"] = (
+        commercial_purchase_count
+    )
+    item["commercial_sale_count"] = (
+        commercial_sale_count
+    )
+    item["commercial_revenue_total"] = (
+        commercial_revenue_total
+    )
 
     return item

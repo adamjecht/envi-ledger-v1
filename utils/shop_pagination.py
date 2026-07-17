@@ -4,7 +4,13 @@ import math
 
 import discord
 
-from services.shop_service import format_stock
+from services.shop_service import (
+    format_item_purchase_status,
+    format_item_seller_mode,
+    format_item_seller_name,
+    format_item_settlement,
+    format_stock,
+)
 from utils.embeds import envi_embed
 from utils.formatting import format_credits
 
@@ -113,11 +119,25 @@ class ShopPaginationView(discord.ui.View):
             item_stock = format_stock(item["stock"])
             item_description = str(item["description"])
 
-            # Organization-linked sellers do not exist yet.
-            # This fallback remains compatible with that later V2 system.
-            seller_name = str(
-                item.get("seller_name")
-                or "ENVI Commercial Exchange"
+            seller_name = (
+                format_item_seller_name(
+                    item
+                )
+            )
+            seller_mode = (
+                format_item_seller_mode(
+                    item
+                )
+            )
+            purchase_status = (
+                format_item_purchase_status(
+                    item
+                )
+            )
+            settlement = (
+                format_item_settlement(
+                    item
+                )
             )
 
             field_name = _shorten_text(
@@ -129,8 +149,12 @@ class ShopPaginationView(discord.ui.View):
                 (
                     f"Category: `{item_category}` | "
                     f"Rarity: `{item_rarity}`\n"
-                    f"Stock: `{item_stock}` | "
+                    f"Stock: `{item_stock}`\n"
                     f"Seller: **{seller_name}**\n"
+                    f"Ownership: `{seller_mode}`\n"
+                    f"Purchase Status: "
+                    f"`{purchase_status}`\n"
+                    f"Settlement: `{settlement}`\n"
                     f"{item_description}"
                 ),
                 EMBED_FIELD_VALUE_LIMIT,

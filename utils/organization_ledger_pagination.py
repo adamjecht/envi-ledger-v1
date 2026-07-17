@@ -4,6 +4,9 @@ import math
 
 import discord
 
+from utils.constants import (
+    ORGANIZATION_TRANSACTION_SHOP_SALE,
+)
 from utils.embeds import envi_embed
 from utils.formatting import format_credits
 
@@ -59,7 +62,22 @@ def _format_transaction_type(
     """
     Formats a stored organization transaction type.
     """
-    return str(transaction_type).replace(
+    clean_type = str(
+        transaction_type
+    )
+
+    display_names = {
+        ORGANIZATION_TRANSACTION_SHOP_SALE: (
+            "Commercial Shop Sale"
+        ),
+    }
+
+    if clean_type in display_names:
+        return display_names[
+            clean_type
+        ]
+
+    return clean_type.replace(
         "_",
         " ",
     ).title()
@@ -162,6 +180,29 @@ def _format_counterparty(
 
     return "None recorded"
 
+def _format_transaction_parties(
+    transaction: dict,
+) -> str:
+    """
+    Formats transaction participants without duplicating a
+    commercial buyer as both actor and counterparty.
+    """
+    if (
+        transaction.get(
+            "transaction_type"
+        )
+        == ORGANIZATION_TRANSACTION_SHOP_SALE
+    ):
+        return (
+            "Buyer: "
+            f"{_format_actor(transaction)}"
+        )
+
+    return (
+        f"Actor: {_format_actor(transaction)}\n"
+        "Counterparty: "
+        f"{_format_counterparty(transaction)}"
+    )
 
 class OrganizationLedgerPaginationView(
     discord.ui.View
@@ -341,15 +382,44 @@ class OrganizationLedgerPaginationView(
             )
 
             item_line = ""
+
             if related_item_id is not None:
                 item_name = (
-                    str(related_item_name).strip()
+                    str(
+                        related_item_name
+                    ).strip()
                     if related_item_name
                     else "Unknown item"
                 )
+
+                item_label = (
+                    "Item Sold"
+                    if (
+                        transaction.get(
+                            "transaction_type"
+                        )
+                        == ORGANIZATION_TRANSACTION_SHOP_SALE
+                    )
+                    else "Related Item"
+                )
+
                 item_line = (
-                    f"\nRelated Item: {item_name} "
+                    f"\n{item_label}: "
+                    f"**{item_name}** "
                     f"(`{related_item_id}`)"
+                )
+
+            settlement_line = ""
+
+            if (
+                transaction.get(
+                    "transaction_type"
+                )
+                == ORGANIZATION_TRANSACTION_SHOP_SALE
+            ):
+                settlement_line = (
+                    "\nSettlement: "
+                    "`Organization Commercial Revenue`"
                 )
 
             field_name = _shorten_text(
@@ -363,15 +433,14 @@ class OrganizationLedgerPaginationView(
 
             field_value = _shorten_text(
                 (
-                    f"Actor: {_format_actor(transaction)}\n"
-                    "Counterparty: "
-                    f"{_format_counterparty(transaction)}\n"
+                    f"{_format_transaction_parties(transaction)}\n"
                     "Balance After: "
                     f"**{format_credits(int(transaction['balance_after']))}**\n"
                     f"Reason: {reason}\n"
                     f"Reference: {reference_text}\n"
                     f"Recorded: {created_text}"
                     f"{item_line}"
+                    f"{settlement_line}"
                 ),
                 EMBED_FIELD_VALUE_LIMIT,
             )
