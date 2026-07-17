@@ -15,6 +15,7 @@ from utils.constants import (
     CITATION_STATUS_PAID,
     CITATION_STATUS_VOID,
     CITATION_STATUSES,
+    TRANSACTION_FINE_PAYMENT,
 )
 
 
@@ -1086,6 +1087,252 @@ def mark_citation_paid(
 
     return citation
 
+def pay_citation(
+    *,
+    user_id: int,
+    citation_identifier: object,
+) -> dict:
+    """
+    Pays one OPEN citation belonging to the citizen.
+
+    Every required operation succeeds or fails together:
+
+    - The citation is confirmed to belong to the user
+    - The user's full balance is verified
+    - The user's balance decreases exactly once
+    - One FINE_PAYMENT transaction is created
+    - The citation becomes PAID
+    - The payment transaction is linked to the citation
+
+    Fine payments are credit sinks. No user or
+    organization receives the removed credits.
+    """
+    clean_user_id = _validate_positive_id(
+        value=user_id,
+        field_name="Paying user ID",
+    )
+
+    citation_id = parse_citation_identifier(
+        citation_identifier
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            user_row = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    display_name,
+                    balance,
+                    created_at,
+                    updated_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (clean_user_id,),
+            ).fetchone()
+
+            if user_row is None:
+                raise ValueError(
+                    "Paying user is not registered."
+                )
+
+            citation_row = _get_citation_row(
+                connection=connection,
+                citation_id=citation_id,
+            )
+
+            if citation_row is None:
+                raise ValueError(
+                    "Requested citation was not found."
+                )
+
+            if int(
+                citation_row["user_id"]
+            ) != clean_user_id:
+                raise ValueError(
+                    "You can only pay citations issued "
+                    "to your own ENVI account."
+                )
+
+            if (
+                str(citation_row["status"])
+                != CITATION_STATUS_OPEN
+            ):
+                raise ValueError(
+                    "Only OPEN citations can be paid."
+                )
+
+            citation_amount = int(
+                citation_row["amount"]
+            )
+
+            balance_before = int(
+                user_row["balance"]
+            )
+
+            if balance_before < citation_amount:
+                raise ValueError(
+                    "Insufficient Nexus Credits. "
+                    f"This citation requires "
+                    f"{citation_amount:,} credits, but "
+                    f"the account contains only "
+                    f"{balance_before:,}."
+                )
+
+            citation_public_id = (
+                format_citation_identifier(
+                    citation_id
+                )
+            )
+
+            now = utc_now()
+
+            balance_cursor = connection.execute(
+                """
+                UPDATE users
+                SET
+                    balance = balance - ?,
+                    updated_at = ?
+                WHERE
+                    user_id = ?
+                    AND balance >= ?
+                """,
+                (
+                    citation_amount,
+                    now,
+                    clean_user_id,
+                    citation_amount,
+                ),
+            )
+
+            if balance_cursor.rowcount != 1:
+                raise RuntimeError(
+                    "Citizen balance changed before the "
+                    "citation payment could complete."
+                )
+
+            transaction_reason = (
+                "Paid Black Badge citation "
+                f"{citation_public_id}. "
+                "Credits removed from circulation."
+            )
+
+            transaction_cursor = connection.execute(
+                """
+                INSERT INTO transactions (
+                    user_id,
+                    target_user_id,
+                    type,
+                    amount,
+                    reason,
+                    created_at
+                )
+                VALUES (
+                    ?,
+                    NULL,
+                    ?,
+                    ?,
+                    ?,
+                    ?
+                )
+                """,
+                (
+                    clean_user_id,
+                    TRANSACTION_FINE_PAYMENT,
+                    -citation_amount,
+                    transaction_reason,
+                    now,
+                ),
+            )
+
+            payment_transaction_id = int(
+                transaction_cursor.lastrowid
+            )
+
+            paid_citation = (
+                mark_citation_paid_on_connection(
+                    connection=connection,
+                    citation_identifier=citation_id,
+                    paid_by_user_id=clean_user_id,
+                    payment_transaction_id=(
+                        payment_transaction_id
+                    ),
+                )
+            )
+
+            updated_user_row = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    display_name,
+                    balance,
+                    created_at,
+                    updated_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (clean_user_id,),
+            ).fetchone()
+
+            payment_transaction_row = (
+                connection.execute(
+                    """
+                    SELECT
+                        transaction_id,
+                        user_id,
+                        target_user_id,
+                        type,
+                        amount,
+                        reason,
+                        created_at
+                    FROM transactions
+                    WHERE transaction_id = ?
+                    """,
+                    (
+                        payment_transaction_id,
+                    ),
+                ).fetchone()
+            )
+
+            if updated_user_row is None:
+                raise RuntimeError(
+                    "Citation payment completed, but the "
+                    "updated citizen account could not "
+                    "be retrieved."
+                )
+
+            if payment_transaction_row is None:
+                raise RuntimeError(
+                    "Citation payment completed, but the "
+                    "payment transaction could not be "
+                    "retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Citation payment could not be processed. "
+            "No balance, transaction, or citation "
+            "change was retained."
+        ) from error
+
+    return {
+        "citation": paid_citation,
+        "user": dict(
+            updated_user_row
+        ),
+        "amount": citation_amount,
+        "balance_before": balance_before,
+        "transaction": dict(
+            payment_transaction_row
+        ),
+    }
 
 def void_citation(
     *,

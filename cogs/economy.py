@@ -5,6 +5,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from services.cooldown_service import get_remaining_cooldown, set_cooldown
+from services.citation_service import (
+    get_citation_report,
+    get_user_citations,
+    pay_citation,
+)
 from services.economy_service import (
     add_credits,
     ensure_user,
@@ -35,6 +40,7 @@ from services.purchase_service import (
 from services.log_channel_service import send_ledger_log
 from services.transaction_service import log_transaction
 from utils.constants import (
+    CITATION_STATUS_OPEN,
     DAILY_AMOUNT,
     DAILY_COOLDOWN_SECONDS,
     LEADERBOARD_LIMIT,
@@ -53,6 +59,10 @@ from utils.autocomplete import (
     use_item_autocomplete,
 )
 from utils.formatting import format_credits, format_seconds
+from utils.citation_pagination import (
+    CitationPaginationView,
+    RECENT_CITATION_HISTORY_LIMIT,
+)
 from utils.shop_pagination import ShopPaginationView
 from utils.work_assignments import ADDITIONAL_WORK_ASSIGNMENTS
 
@@ -89,6 +99,202 @@ class EconomyCog(commands.Cog):
         )
 
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
+        name="fines",
+        description=(
+            "View your Black Badge citations."
+        ),
+    )
+    async def fines(
+        self,
+        interaction: discord.Interaction,
+    ):
+        user = interaction.user
+
+        ensure_user(
+            user_id=user.id,
+            display_name=user.display_name,
+        )
+
+        open_citations = get_user_citations(
+            user_id=user.id,
+            status=CITATION_STATUS_OPEN,
+        )
+
+        all_citations = get_user_citations(
+            user_id=user.id,
+        )
+
+        recent_history = [
+            citation
+            for citation in all_citations
+            if (
+                str(
+                    citation["status"]
+                )
+                != CITATION_STATUS_OPEN
+            )
+        ][
+            :RECENT_CITATION_HISTORY_LIMIT
+        ]
+
+        report = get_citation_report(
+            user_id=user.id
+        )
+
+        if (
+            not open_citations
+            and not recent_history
+        ):
+            embed = envi_embed(
+                title=(
+                    "BLACK BADGE CITATION RECORD"
+                ),
+                description=(
+                    f"Citizen: {user.mention}\n\n"
+                    "No Black Badge citations are "
+                    "registered to this account."
+                ),
+            )
+
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        view = CitationPaginationView(
+            open_citations=open_citations,
+            recent_history=recent_history,
+            report=report,
+            user_id=user.id,
+        )
+
+        await interaction.response.send_message(
+            embed=view.build_embed(),
+            view=view,
+            ephemeral=True,
+        )
+
+        view.message = (
+            await interaction.original_response()
+        )
+
+    @app_commands.command(
+        name="payfine",
+        description=(
+            "Pay one OPEN Black Badge citation."
+        ),
+    )
+    @app_commands.describe(
+        citation_identifier=(
+            "Your citation ID, such as BB-000001."
+        ),
+    )
+    async def payfine(
+        self,
+        interaction: discord.Interaction,
+        citation_identifier: str,
+    ):
+        user = interaction.user
+
+        ensure_user(
+            user_id=user.id,
+            display_name=user.display_name,
+        )
+
+        await interaction.response.defer(
+            ephemeral=True
+        )
+
+        try:
+            result = pay_citation(
+                user_id=user.id,
+                citation_identifier=(
+                    citation_identifier
+                ),
+            )
+
+        except (
+            ValueError,
+            RuntimeError,
+        ) as error:
+            embed = envi_error(
+                title=(
+                    "BLACK BADGE PAYMENT DENIED"
+                ),
+                reason=str(error),
+            )
+
+            await interaction.followup.send(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        citation = result["citation"]
+        transaction = result["transaction"]
+
+        await send_ledger_log(
+            bot=interaction.client,
+            title=(
+                "BLACK BADGE FINE PAYMENT LOG"
+            ),
+            description=(
+                "Type: "
+                f"`{transaction['type']}`\n"
+                "Citation: "
+                f"`{citation['citation_identifier']}`\n"
+                f"Citizen: {user.mention}\n"
+                f"Citizen ID: `{user.id}`\n"
+                "Issuer: "
+                f"**{citation['issuer_display_name']}**\n"
+                "Citation Amount: "
+                f"**{format_credits(result['amount'])}**\n"
+                "Previous Balance: "
+                f"**{format_credits(result['balance_before'])}**\n"
+                "Updated Balance: "
+                f"**{format_credits(result['user']['balance'])}**\n"
+                "Payment Transaction ID: "
+                f"`{transaction['transaction_id']}`\n"
+                "Previous Status: **OPEN**\n"
+                "Updated Status: **PAID**\n"
+                "Economic Treatment: "
+                "`Credits Removed from Circulation`\n"
+                "Citation Reason: "
+                f"{citation['reason']}"
+            ),
+        )
+
+        embed = envi_embed(
+            title=(
+                "BLACK BADGE CITATION PAID"
+            ),
+            description=(
+                "Citation: "
+                f"`{citation['citation_identifier']}`\n"
+                "Status: **PAID**\n"
+                "Amount Paid: "
+                f"**{format_credits(result['amount'])}**\n"
+                "Previous Balance: "
+                f"**{format_credits(result['balance_before'])}**\n"
+                "Updated Balance: "
+                f"**{format_credits(result['user']['balance'])}**\n"
+                "Payment Transaction: "
+                f"`{transaction['transaction_id']}`\n\n"
+                "**Citation Reason**\n"
+                f"{citation['reason']}\n\n"
+                "_Payment was processed in full. "
+                "The removed credits did not transfer "
+                "to another citizen or organization._"
+            ),
+        )
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="daily",
