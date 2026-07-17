@@ -1,6 +1,11 @@
 import discord
 from discord import app_commands
 
+from services.citation_service import (
+    create_citation,
+    get_citation,
+    void_citation,
+)
 from services.economy_service import (
     add_credits,
     ensure_user,
@@ -83,7 +88,18 @@ admin_org_group = app_commands.Group(
     description="Manage ENVI Ledger organizations.",
 )
 
-admin_group.add_command(admin_org_group)
+admin_fine_group = app_commands.Group(
+    name="fine",
+    description="Manage Black Badge citations.",
+)
+
+admin_group.add_command(
+    admin_org_group
+)
+
+admin_group.add_command(
+    admin_fine_group
+)
 
 def format_transaction_amount(amount: int) -> str:
     """
@@ -247,6 +263,178 @@ def build_organization_change_summary(
 
     return "\n".join(lines)
 
+def format_citation_party(
+    display_name: object,
+    user_id: object,
+) -> str:
+    """
+    Formats a stored citation participant.
+    """
+    name = format_audit_text(
+        display_name,
+        fallback="Unknown User",
+        limit=200,
+    )
+
+    return (
+        f"**{name}** "
+        f"(`{int(user_id)}`)"
+    )
+
+
+def format_citation_timestamp(
+    value: object,
+) -> str:
+    """
+    Formats an optional citation timestamp.
+    """
+    if value is None:
+        return "Not recorded."
+
+    text = str(value).strip()
+
+    if not text:
+        return "Not recorded."
+
+    return f"`{text}`"
+
+
+def build_admin_citation_description(
+    citation: dict,
+) -> str:
+    """
+    Builds a complete staff-facing citation record.
+    """
+    reason = format_audit_text(
+        citation["reason"],
+        fallback="No reason recorded.",
+        limit=700,
+    )
+
+    administrative_notes = format_audit_text(
+        citation["administrative_notes"],
+        fallback="No administrative notes.",
+        limit=1900,
+    )
+
+    lines = [
+        (
+            "Citation: "
+            f"`{citation['citation_identifier']}`"
+        ),
+        (
+            "Status: "
+            f"**{citation['status']}**"
+        ),
+        (
+            "Citizen: "
+            + format_citation_party(
+                citation["user_display_name"],
+                citation["user_id"],
+            )
+        ),
+        (
+            "Issuer: "
+            + format_citation_party(
+                citation["issuer_display_name"],
+                citation["issuer_user_id"],
+            )
+        ),
+        (
+            "Amount: "
+            f"**{format_credits(int(citation['amount']))}**"
+        ),
+        (
+            "Issued At: "
+            + format_citation_timestamp(
+                citation["issued_at"]
+            )
+        ),
+        (
+            "Updated At: "
+            + format_citation_timestamp(
+                citation["updated_at"]
+            )
+        ),
+    ]
+
+    status = str(
+        citation["status"]
+    ).upper()
+
+    if status == "PAID":
+        lines.extend(
+            [
+                (
+                    "Paid By: "
+                    + format_citation_party(
+                        citation[
+                            "paid_by_display_name"
+                        ],
+                        citation[
+                            "paid_by_user_id"
+                        ],
+                    )
+                ),
+                (
+                    "Paid At: "
+                    + format_citation_timestamp(
+                        citation["paid_at"]
+                    )
+                ),
+                (
+                    "Payment Transaction: "
+                    f"`{citation['payment_transaction_id']}`"
+                ),
+                (
+                    "Payment Type: "
+                    f"`{citation['payment_transaction_type']}`"
+                ),
+            ]
+        )
+
+    elif status == "VOID":
+        lines.extend(
+            [
+                (
+                    "Voided By: "
+                    + format_citation_party(
+                        citation[
+                            "voided_by_display_name"
+                        ],
+                        citation[
+                            "voided_by_user_id"
+                        ],
+                    )
+                ),
+                (
+                    "Voided At: "
+                    + format_citation_timestamp(
+                        citation["voided_at"]
+                    )
+                ),
+            ]
+        )
+
+    else:
+        lines.append(
+            "Resolution: **Pending**"
+        )
+
+    lines.extend(
+        [
+            "",
+            "**Citation Reason**",
+            reason,
+            "",
+            "**Administrative Notes**",
+            administrative_notes,
+        ]
+    )
+
+    return "\n".join(
+        lines
+    )
 
 async def require_admin(interaction: discord.Interaction) -> bool:
     """
@@ -290,6 +478,387 @@ async def admin_status(interaction: discord.Interaction):
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@admin_fine_group.command(
+    name="issue",
+    description=(
+        "Issue an OPEN Black Badge citation."
+    ),
+)
+@app_commands.describe(
+    citizen=(
+        "The citizen receiving the citation."
+    ),
+    amount=(
+        "The full citation amount in Nexus Credits."
+    ),
+    reason=(
+        "The required reason for the citation."
+    ),
+    administrative_notes=(
+        "Optional private staff notes."
+    ),
+)
+async def admin_fine_issue(
+    interaction: discord.Interaction,
+    citizen: discord.Member,
+    amount: app_commands.Range[int, 1],
+    reason: str,
+    administrative_notes: str | None = None,
+):
+    if not await require_admin(
+        interaction
+    ):
+        return
+
+    if citizen.bot:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION DENIED"
+            ),
+            reason=(
+                "Bot accounts cannot receive "
+                "Black Badge citations."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=citizen.id,
+        display_name=citizen.display_name,
+    )
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=(
+            interaction.user.display_name
+        ),
+    )
+
+    balance_before = get_balance(
+        citizen.id
+    )
+
+    try:
+        citation = create_citation(
+            user_id=citizen.id,
+            issuer_user_id=(
+                interaction.user.id
+            ),
+            amount=amount,
+            reason=reason,
+            administrative_notes=(
+                administrative_notes
+            ),
+        )
+
+    except (
+        ValueError,
+        RuntimeError,
+    ) as error:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION DENIED"
+            ),
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    balance_after = get_balance(
+        citizen.id
+    )
+
+    citation_description = (
+        build_admin_citation_description(
+            citation
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="BLACK BADGE CITATION LOG",
+        description=(
+            "Type: `ADMIN_FINE_ISSUE`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Operator ID: "
+            f"`{interaction.user.id}`\n"
+            f"Citizen: {citizen.mention}\n"
+            f"Citizen Balance Before: "
+            f"**{format_credits(balance_before)}**\n"
+            f"Citizen Balance After: "
+            f"**{format_credits(balance_after)}**\n"
+            "Credit Movement: **None**\n\n"
+            f"{citation_description}"
+        ),
+    )
+
+    embed = envi_embed(
+        title="BLACK BADGE CITATION ISSUED",
+        description=(
+            f"{citation_description}\n\n"
+            "_Issuing a citation does not remove "
+            "credits. Payment or collection occurs "
+            "through a separate command._"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+
+@admin_fine_group.command(
+    name="view",
+    description=(
+        "Inspect one Black Badge citation."
+    ),
+)
+@app_commands.describe(
+    citation_identifier=(
+        "The citation ID, such as BB-000001."
+    ),
+)
+async def admin_fine_view(
+    interaction: discord.Interaction,
+    citation_identifier: str,
+):
+    if not await require_admin(
+        interaction
+    ):
+        return
+
+    try:
+        citation = get_citation(
+            citation_identifier
+        )
+
+    except ValueError as error:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION LOOKUP DENIED"
+            ),
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    if citation is None:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION NOT FOUND"
+            ),
+            reason=(
+                "No citation matches the supplied "
+                "identifier."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    embed = envi_embed(
+        title=(
+            "BLACK BADGE CITATION "
+            f"{citation['citation_identifier']}"
+        ),
+        description=(
+            build_admin_citation_description(
+                citation
+            )
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+
+@admin_fine_group.command(
+    name="void",
+    description=(
+        "Void one OPEN Black Badge citation."
+    ),
+)
+@app_commands.describe(
+    citation_identifier=(
+        "The OPEN citation ID to void."
+    ),
+    reason=(
+        "The required administrative reason "
+        "for voiding the citation."
+    ),
+    confirm=(
+        "Confirm that this citation should "
+        "be permanently voided."
+    ),
+)
+async def admin_fine_void(
+    interaction: discord.Interaction,
+    citation_identifier: str,
+    reason: str,
+    confirm: bool,
+):
+    if not await require_admin(
+        interaction
+    ):
+        return
+
+    if not confirm:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION VOID DENIED"
+            ),
+            reason=(
+                "Void confirmation was not provided."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=(
+            interaction.user.display_name
+        ),
+    )
+
+    try:
+        citation_before = get_citation(
+            citation_identifier
+        )
+
+    except ValueError as error:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION VOID DENIED"
+            ),
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    if citation_before is None:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION VOID DENIED"
+            ),
+            reason=(
+                "No citation matches the supplied "
+                "identifier."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    citizen_id = int(
+        citation_before["user_id"]
+    )
+
+    balance_before = get_balance(
+        citizen_id
+    )
+
+    try:
+        citation_after = void_citation(
+            citation_identifier=(
+                citation_identifier
+            ),
+            voided_by_user_id=(
+                interaction.user.id
+            ),
+            administrative_notes=reason,
+        )
+
+    except (
+        ValueError,
+        RuntimeError,
+    ) as error:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE CITATION VOID DENIED"
+            ),
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    balance_after = get_balance(
+        citizen_id
+    )
+
+    citation_description = (
+        build_admin_citation_description(
+            citation_after
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title="BLACK BADGE CITATION LOG",
+        description=(
+            "Type: `ADMIN_FINE_VOID`\n"
+            f"Operator: {interaction.user.mention}\n"
+            f"Operator ID: "
+            f"`{interaction.user.id}`\n"
+            "Previous Status: **OPEN**\n"
+            "Updated Status: **VOID**\n"
+            f"Citizen Balance Before: "
+            f"**{format_credits(balance_before)}**\n"
+            f"Citizen Balance After: "
+            f"**{format_credits(balance_after)}**\n"
+            "Credit Movement: **None**\n\n"
+            f"{citation_description}"
+        ),
+    )
+
+    embed = envi_embed(
+        title="BLACK BADGE CITATION VOIDED",
+        description=(
+            f"{citation_description}\n\n"
+            "_The citation is now terminal. "
+            "No citizen credits were altered._"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_org_group.command(
     name="create",
