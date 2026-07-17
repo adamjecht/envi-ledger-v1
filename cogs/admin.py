@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 
 from services.citation_service import (
+    collect_citation,
     create_citation,
     get_citation,
     void_citation,
@@ -852,6 +853,190 @@ async def admin_fine_void(
             f"{citation_description}\n\n"
             "_The citation is now terminal. "
             "No citizen credits were altered._"
+        ),
+    )
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=True,
+    )
+
+@admin_fine_group.command(
+    name="collect",
+    description=(
+        "Collect one eligible OPEN Black Badge citation."
+    ),
+)
+@app_commands.describe(
+    citation_identifier=(
+        "The OPEN citation ID to collect."
+    ),
+    reason=(
+        "The required administrative reason for "
+        "collecting the citation."
+    ),
+    confirm=(
+        "Confirm full collection from the citizen's "
+        "balance."
+    ),
+)
+async def admin_fine_collect(
+    interaction: discord.Interaction,
+    citation_identifier: str,
+    reason: str,
+    confirm: bool,
+):
+    if not await require_admin(
+        interaction
+    ):
+        return
+
+    if not confirm:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE COLLECTION DENIED"
+            ),
+            reason=(
+                "Collection confirmation was not "
+                "provided."
+            ),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    ensure_user(
+        user_id=interaction.user.id,
+        display_name=(
+            interaction.user.display_name
+        ),
+    )
+
+    try:
+        result = collect_citation(
+            citation_identifier=(
+                citation_identifier
+            ),
+            collector_user_id=(
+                interaction.user.id
+            ),
+            administrative_notes=reason,
+        )
+
+    except (
+        ValueError,
+        RuntimeError,
+    ) as error:
+        embed = envi_error(
+            title=(
+                "BLACK BADGE COLLECTION DENIED"
+            ),
+            reason=str(error),
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+        return
+
+    citation = result["citation"]
+    citizen = result["user"]
+    collector = result["collector"]
+    transaction = result["transaction"]
+
+    citation_description = (
+        build_admin_citation_description(
+            citation
+        )
+    )
+
+    await send_ledger_log(
+        bot=interaction.client,
+        title=(
+            "BLACK BADGE FINE COLLECTION LOG"
+        ),
+        description=(
+            "Type: "
+            f"`{transaction['type']}`\n"
+            "Citation: "
+            f"`{citation['citation_identifier']}`\n"
+            "Citizen: "
+            + format_citation_party(
+                citation["user_display_name"],
+                citation["user_id"],
+            )
+            + "\n"
+            "Issuer: "
+            + format_citation_party(
+                citation["issuer_display_name"],
+                citation["issuer_user_id"],
+            )
+            + "\n"
+            f"Collector: {interaction.user.mention}\n"
+            f"Collector ID: "
+            f"`{collector['user_id']}`\n"
+            "Payment Method: "
+            "`Administrative Collection`\n"
+            "Citation Amount: "
+            f"**{format_credits(result['amount'])}**\n"
+            "Citizen Balance Before: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Citizen Balance After: "
+            f"**{format_credits(citizen['balance'])}**\n"
+            "Payment Transaction ID: "
+            f"`{transaction['transaction_id']}`\n"
+            "Previous Status: **OPEN**\n"
+            "Updated Status: **PAID**\n"
+            "Partial Collection: **Not Supported**\n"
+            "Economic Treatment: "
+            "`Credits Removed from Circulation`\n\n"
+            "**Collection Reason**\n"
+            f"{reason}\n\n"
+            "**Complete Citation Record**\n"
+            f"{citation_description}"
+        ),
+    )
+
+    embed = envi_embed(
+        title=(
+            "BLACK BADGE CITATION COLLECTED"
+        ),
+        description=(
+            "Citation: "
+            f"`{citation['citation_identifier']}`\n"
+            "Status: **PAID**\n"
+            "Citizen: "
+            + format_citation_party(
+                citation["user_display_name"],
+                citation["user_id"],
+            )
+            + "\n"
+            "Issuer: "
+            + format_citation_party(
+                citation["issuer_display_name"],
+                citation["issuer_user_id"],
+            )
+            + "\n"
+            f"Collector: {interaction.user.mention}\n"
+            "Payment Method: "
+            "**Administrative Collection**\n"
+            "Amount Collected: "
+            f"**{format_credits(result['amount'])}**\n"
+            "Previous Balance: "
+            f"**{format_credits(result['balance_before'])}**\n"
+            "Updated Balance: "
+            f"**{format_credits(citizen['balance'])}**\n"
+            "Payment Transaction: "
+            f"`{transaction['transaction_id']}`\n\n"
+            "**Collection Reason**\n"
+            f"{reason}\n\n"
+            "_The citation was collected in full. "
+            "The removed credits did not transfer to "
+            "another citizen or organization._"
         ),
     )
 

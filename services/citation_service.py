@@ -15,6 +15,7 @@ from utils.constants import (
     CITATION_STATUS_PAID,
     CITATION_STATUS_VOID,
     CITATION_STATUSES,
+    TRANSACTION_FINE_COLLECTION,
     TRANSACTION_FINE_PAYMENT,
 )
 
@@ -1331,6 +1332,310 @@ def pay_citation(
         "balance_before": balance_before,
         "transaction": dict(
             payment_transaction_row
+        ),
+    }
+
+def collect_citation(
+    *,
+    citation_identifier: object,
+    collector_user_id: int,
+    administrative_notes: str,
+) -> dict:
+    """
+    Administratively collects one OPEN citation.
+
+    Every required operation succeeds or fails together:
+
+    - The citation must exist and remain OPEN
+    - The collector must have a registered ENVI account
+    - The citizen must possess the full citation amount
+    - The citizen balance decreases exactly once
+    - One FINE_COLLECTION transaction is created
+    - The citation becomes PAID
+    - The collector and payment transaction are linked
+
+    Partial collection is not supported. Collection
+    removes credits from circulation and cannot create
+    a negative citizen balance.
+    """
+    citation_id = parse_citation_identifier(
+        citation_identifier
+    )
+
+    clean_collector_user_id = (
+        _validate_positive_id(
+            value=collector_user_id,
+            field_name="Collector user ID",
+        )
+    )
+
+    clean_notes = _clean_required_text(
+        value=administrative_notes,
+        field_name="Collection reason",
+        max_length=(
+            CITATION_ADMIN_NOTES_MAX_LENGTH
+        ),
+    )
+
+    try:
+        with get_connection() as connection:
+            connection.execute(
+                "BEGIN IMMEDIATE"
+            )
+
+            citation_row = _get_citation_row(
+                connection=connection,
+                citation_id=citation_id,
+            )
+
+            if citation_row is None:
+                raise ValueError(
+                    "Requested citation was not found."
+                )
+
+            if (
+                str(citation_row["status"])
+                != CITATION_STATUS_OPEN
+            ):
+                raise ValueError(
+                    "Only OPEN citations can be "
+                    "collected."
+                )
+
+            _ensure_user_exists(
+                connection=connection,
+                user_id=clean_collector_user_id,
+                error_message=(
+                    "Citation collector is not "
+                    "registered."
+                ),
+            )
+
+            collector_row = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    display_name,
+                    balance,
+                    created_at,
+                    updated_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (
+                    clean_collector_user_id,
+                ),
+            ).fetchone()
+
+            citizen_id = int(
+                citation_row["user_id"]
+            )
+
+            citizen_row = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    display_name,
+                    balance,
+                    created_at,
+                    updated_at
+                FROM users
+                WHERE user_id = ?
+                """,
+                (citizen_id,),
+            ).fetchone()
+
+            if collector_row is None:
+                raise RuntimeError(
+                    "The registered collector account "
+                    "could not be retrieved."
+                )
+
+            if citizen_row is None:
+                raise RuntimeError(
+                    "The cited citizen account could "
+                    "not be retrieved."
+                )
+
+            citation_amount = int(
+                citation_row["amount"]
+            )
+
+            balance_before = int(
+                citizen_row["balance"]
+            )
+
+            if balance_before < citation_amount:
+                raise ValueError(
+                    "Administrative collection requires "
+                    "the full citation amount. "
+                    f"The citation requires "
+                    f"{citation_amount:,} credits, but "
+                    f"the citizen has only "
+                    f"{balance_before:,}."
+                )
+
+            citation_public_id = (
+                format_citation_identifier(
+                    citation_id
+                )
+            )
+
+            now = utc_now()
+
+            balance_cursor = connection.execute(
+                """
+                UPDATE users
+                SET
+                    balance = balance - ?,
+                    updated_at = ?
+                WHERE
+                    user_id = ?
+                    AND balance >= ?
+                """,
+                (
+                    citation_amount,
+                    now,
+                    citizen_id,
+                    citation_amount,
+                ),
+            )
+
+            if balance_cursor.rowcount != 1:
+                raise RuntimeError(
+                    "Citizen balance changed before "
+                    "administrative collection could "
+                    "complete."
+                )
+
+            transaction_reason = (
+                "Administratively collected Black Badge "
+                f"citation {citation_public_id}. "
+                "Collector user ID: "
+                f"{clean_collector_user_id}. "
+                "Credits removed from circulation."
+            )
+
+            transaction_cursor = connection.execute(
+                """
+                INSERT INTO transactions (
+                    user_id,
+                    target_user_id,
+                    type,
+                    amount,
+                    reason,
+                    created_at
+                )
+                VALUES (
+                    ?,
+                    NULL,
+                    ?,
+                    ?,
+                    ?,
+                    ?
+                )
+                """,
+                (
+                    citizen_id,
+                    TRANSACTION_FINE_COLLECTION,
+                    -citation_amount,
+                    transaction_reason,
+                    now,
+                ),
+            )
+
+            payment_transaction_id = int(
+                transaction_cursor.lastrowid
+            )
+
+            paid_citation = (
+                mark_citation_paid_on_connection(
+                    connection=connection,
+                    citation_identifier=citation_id,
+                    paid_by_user_id=(
+                        clean_collector_user_id
+                    ),
+                    payment_transaction_id=(
+                        payment_transaction_id
+                    ),
+                    administrative_notes=(
+                        clean_notes
+                    ),
+                )
+            )
+
+            updated_citizen_row = (
+                connection.execute(
+                    """
+                    SELECT
+                        user_id,
+                        display_name,
+                        balance,
+                        created_at,
+                        updated_at
+                    FROM users
+                    WHERE user_id = ?
+                    """,
+                    (citizen_id,),
+                ).fetchone()
+            )
+
+            transaction_row = connection.execute(
+                """
+                SELECT
+                    transaction_id,
+                    user_id,
+                    target_user_id,
+                    type,
+                    amount,
+                    reason,
+                    created_at
+                FROM transactions
+                WHERE transaction_id = ?
+                """,
+                (
+                    payment_transaction_id,
+                ),
+            ).fetchone()
+
+            if updated_citizen_row is None:
+                raise RuntimeError(
+                    "Collection completed, but the "
+                    "updated citizen account could not "
+                    "be retrieved."
+                )
+
+            if transaction_row is None:
+                raise RuntimeError(
+                    "Collection completed, but the "
+                    "collection transaction could not "
+                    "be retrieved."
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "Citation collection could not be "
+            "processed. No balance, transaction, or "
+            "citation change was retained."
+        ) from error
+
+    return {
+        "citation": paid_citation,
+        "user": dict(
+            updated_citizen_row
+        ),
+        "collector": dict(
+            collector_row
+        ),
+        "amount": citation_amount,
+        "balance_before": balance_before,
+        "transaction": dict(
+            transaction_row
+        ),
+        "payment_method": (
+            "ADMINISTRATIVE_COLLECTION"
         ),
     }
 
