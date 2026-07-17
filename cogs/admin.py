@@ -3011,51 +3011,208 @@ async def admin_restock(
 
 @admin_group.command(
     name="economy",
-    description="View ENVI Ledger economy-wide statistics.",
+    description=(
+        "View the complete ENVI Ledger economy."
+    ),
 )
-async def admin_economy(interaction: discord.Interaction):
-    if not await require_admin(interaction):
+async def admin_economy(
+    interaction: discord.Interaction,
+):
+    if not await require_admin(
+        interaction
+    ):
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     stats = get_economy_stats()
 
-    richest_user = stats["richest_user"]
+    richest_user = stats[
+        "richest_user"
+    ]
 
     if richest_user is None:
-        richest_text = "No registered citizens."
+        richest_user_text = (
+            "No registered citizens."
+        )
     else:
-        richest_text = (
-            f"{richest_user['display_name']} "
+        richest_user_text = (
+            f"**{richest_user['display_name']}** "
             f"({format_credits(richest_user['balance'])})"
+        )
+
+    richest_organization = stats[
+        "richest_organization"
+    ]
+
+    if richest_organization is None:
+        richest_organization_text = (
+            "No registered organizations."
+        )
+    else:
+        richest_organization_status = (
+            format_organization_status(
+                richest_organization[
+                    "active"
+                ]
+            )
+        )
+
+        richest_organization_text = (
+            f"**{richest_organization['name']}** "
+            f"({format_credits(richest_organization['balance'])}, "
+            f"{richest_organization_status})"
+        )
+
+    top_business = stats[
+        "top_business"
+    ]
+
+    if top_business is None:
+        top_business_text = (
+            "No commercial sales recorded."
+        )
+    else:
+        top_business_text = (
+            f"**{top_business['name']}** — "
+            f"{top_business['sale_count']} sale(s), "
+            f"{format_credits(top_business['sales_total'])}"
+        )
+
+    if stats["circulation_reconciled"]:
+        circulation_reconciliation = (
+            "**Balanced**"
+        )
+    else:
+        circulation_reconciliation = (
+            "**Review Required** "
+            f"({format_transaction_amount(stats['circulation_reconciliation_difference'])})"
+        )
+
+    if stats["commercial_reconciled"]:
+        commerce_reconciliation = (
+            "**Balanced**"
+        )
+    else:
+        commerce_reconciliation = (
+            "**Review Required** "
+            f"({format_transaction_amount(stats['commercial_reconciliation_difference'])})"
+        )
+
+    if stats["citation_reconciled"]:
+        citation_reconciliation = (
+            "**Balanced**"
+        )
+    else:
+        citation_reconciliation = (
+            "**Review Required** "
+            f"({format_transaction_amount(stats['citation_reconciliation_difference'])})"
         )
 
     embed = envi_embed(
         title="ENVI ECONOMY STATUS",
         description=(
+            "**Total Circulation**\n"
+            "Citizen Balances: "
+            f"**{format_credits(stats['citizen_balance_total'])}**\n"
+            "Organization Balances: "
+            f"**{format_credits(stats['organization_balance_total'])}**\n"
+            "Combined Circulation: "
+            f"**{format_credits(stats['total_circulation'])}**\n"
+            "Ledger Reconciliation: "
+            f"{circulation_reconciliation}\n\n"
+
             "**Citizen Accounts**\n"
             f"Registered Citizens: **{stats['total_users']}**\n"
-            f"Credits In Circulation: **{format_credits(stats['total_credits'])}**\n"
-            f"Current Highest Balance: **{richest_text}**\n\n"
-            "**Credit Flow**\n"
-            f"Credits Generated: **{format_credits(stats['credits_generated'])}**\n"
-            f"Credits Removed: **{format_credits(stats['credits_removed'])}**\n"
-            f"Net Economy Change: **{format_credits(stats['net_change'])}**\n\n"
-            "**Commerce**\n"
-            f"Shop Purchases: **{stats['shop_purchase_count']}**\n"
-            f"Shop Spending Total: **{format_credits(stats['shop_spending_total'])}**\n"
-            f"Player Transfers: **{stats['transfer_count']}**\n"
-            f"Transfer Volume: **{format_credits(stats['transfer_volume'])}**\n\n"
+            "Highest Citizen Balance: "
+            f"{richest_user_text}\n"
+            f"Citizen Transfers: **{stats['transfer_count']}**\n"
+            "Citizen Transfer Volume: "
+            f"**{format_credits(stats['transfer_volume'])}**\n\n"
+
+            "**Organization Accounts**\n"
+            f"Registered Organizations: **{stats['total_organizations']}**\n"
+            f"Active: **{stats['active_organizations']}**"
+            f" • Inactive: **{stats['inactive_organizations']}**\n"
+            f"Registered Businesses: **{stats['business_organizations']}**\n"
+            "Highest Organization Balance: "
+            f"{richest_organization_text}\n"
+            f"Top-Selling Business: {top_business_text}\n\n"
+
+            "**Credits Generated**\n"
+            "Personal Rewards & Adjustments: "
+            f"**{format_credits(stats['personal_credits_generated'])}** "
+            f"across **{stats['personal_generation_count']}** record(s)\n"
+            "Generated Organization Revenue: "
+            f"**{format_credits(stats['organization_revenue_generated'])}** "
+            f"across **{stats['organization_revenue_count']}** record(s)\n"
+            "Positive Organization Corrections: "
+            f"**{format_credits(stats['organization_balance_generated'])}**\n"
+            "Total Generated: "
+            f"**{format_credits(stats['credits_generated'])}**\n\n"
+
+            "**Credits Removed**\n"
+            "System-Shop Sink: "
+            f"**{format_credits(stats['system_shop_sink_total'])}** "
+            f"across **{stats['system_shop_sink_count']}** purchase(s)\n"
+            "Fine Payments: "
+            f"**{format_credits(stats['fine_payment_total'])}** "
+            f"across **{stats['fine_payment_count']}** payment(s)\n"
+            "Administrative Fine Collections: "
+            f"**{format_credits(stats['fine_collection_total'])}** "
+            f"across **{stats['fine_collection_count']}** collection(s)\n"
+            "Other Administrative Removal: "
+            f"**{format_credits(stats['personal_admin_removal_total'])}**\n"
+            "Negative Organization Corrections: "
+            f"**{format_credits(stats['organization_credits_removed'])}**\n"
+            "Total Removed: "
+            f"**{format_credits(stats['credits_removed'])}**\n"
+            "Net Economy Change: "
+            f"**{format_transaction_amount(stats['net_change'])}**\n\n"
+
+            "**Commercial Circulation**\n"
+            "Commercial Purchases: "
+            f"**{stats['commercial_purchase_count']}** "
+            f"totaling **{format_credits(stats['commercial_spending_total'])}**\n"
+            "Business Sales: "
+            f"**{stats['business_sale_count']}** "
+            f"totaling **{format_credits(stats['business_sales_total'])}**\n"
+            "Commercial Reconciliation: "
+            f"{commerce_reconciliation}\n"
+            "_Business sales move existing credits and are not "
+            "counted as newly generated revenue._\n\n"
+
+            "**Black Badge Citations**\n"
+            "Total Citations: "
+            f"**{stats['citation_total_count']}** "
+            f"valued at **{format_credits(stats['citation_total_value'])}**\n"
+            "Open: "
+            f"**{stats['citation_open_count']}** "
+            f"({format_credits(stats['citation_open_value'])})\n"
+            "Paid: "
+            f"**{stats['citation_paid_count']}** "
+            f"({format_credits(stats['citation_paid_value'])})\n"
+            "Void: "
+            f"**{stats['citation_void_count']}** "
+            f"({format_credits(stats['citation_void_value'])})\n"
+            "Paid-Citation Reconciliation: "
+            f"{citation_reconciliation}\n\n"
+
             "**Exchange Inventory**\n"
             f"Active Shop Items: **{stats['active_shop_items']}**\n"
             f"Limited Stock Items: **{stats['limited_stock_items']}**\n"
             f"Sold Out Items: **{stats['sold_out_items']}**\n"
-            f"Total Items Held By Citizens: **{stats['inventory_quantity_total']}**"
+            "Total Items Held By Citizens: "
+            f"**{stats['inventory_quantity_total']}**"
         ),
     )
 
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    await interaction.followup.send(
+        embed=embed,
+        ephemeral=True,
+    )
 
 @admin_group.command(
     name="economyreport",
