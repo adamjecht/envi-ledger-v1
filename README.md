@@ -1,41 +1,46 @@
-ENVI Ledger
+# ENVI Ledger
 
 ENVI Ledger is the economy-only Discord bot for the Exordium Nexus.
 
-It manages Nexus Credits, citizen balances, shop purchases, inventories, item usage, transaction logs, and staff-facing economy reports.
-
-Currency:
+It manages Nexus Credits, citizen accounts, organizations, commercial purchases, inventories, Black Badge citations, transaction ledgers, staff auditing, and economy reporting.
 
 ```text
-₦C — Nexus Credits
-````
-
----
-
-## Current Version
-
-```text
-Version: V1.5 Ledger Polish
-Status: Live on Railway
+Currency: ₦C — Nexus Credits
 ```
 
-V1.5 expands the original economy system with item metadata, inventory upgrades, usable items, limited stock, economy statistics, and SIN News economy reporting.
+## Current Release Status
+
+```text
+Version: V2.0 — Institutions & Consequences
+Status: Pre-release development
+Production: V1.5 remains live until the V2 deployment step
+```
+
+Release thesis:
+
+> Citizens earn. Businesses trade. Institutions pay. ENVI records. The Black Badge collects.
 
 ---
 
-## Core Citizen Commands
+# Public Commands
+
+## Citizen Economy
+
+### `/ping`
+
+Confirm that ENVI Ledger is online.
 
 ### `/balance`
 
-View your current Nexus Credit balance.
+View your own balance or another citizen’s registered balance.
 
 ### `/daily`
 
-Claim your Civic Dividend.
+Claim the Civic Dividend.
 
 ### `/work`
 
-Complete a Shift Assignment for Nexus Credits.
+Complete a Nexus Shift Assignment.
 
 Current cooldown:
 
@@ -49,260 +54,373 @@ Transfer Nexus Credits to another citizen.
 
 ### `/leaderboard`
 
-View the top Nexus Credit holders.
+View the leading citizen balances.
+
+### `/help`
+
+View the V2 command, permissions, and citation guide.
 
 ---
 
-## Commercial Exchange Commands
+# Commercial Exchange and Inventory
 
 ### `/shop`
 
-View the ENVI Commercial Exchange.
+Browse the compact paginated ENVI Commercial Exchange.
 
-Shop items display:
+The shop displays:
 
 ```text
-Name
+Item name
 Price
 Category
 Rarity
 Stock
+Seller
+Settlement type
 Description
 ```
 
-### `/shop category:`
+System-owned purchases remove credits from circulation.
 
-Filter the shop by item category.
-
-Current categories:
-
-```text
-General
-Food & Drink
-Luxury
-Transit
-Access Passes
-Obsession Items
-Eclipse Items
-Foxy Delights Items
-Black Badge / Civic
-Collectibles
-Event Items
-```
+Organization-owned purchases move credits from the buyer to the seller organization.
 
 ### `/buy`
 
-Purchase an item from the ENVI Commercial Exchange.
+Purchase one or more copies of an active item.
 
-Limited-stock items reduce stock when purchased. Sold-out items cannot be bought.
+The command supports item autocomplete, limited stock, sold-out protection, inventory updates, and atomic seller settlement.
 
 ### `/inventory`
 
-View your owned items.
-
-Inventory entries display:
-
-```text
-Quantity
-Name
-Category
-Rarity
-Use Status
-Type
-Description
-```
+View a citizen’s owned items and their metadata.
 
 ### `/use`
 
-Use an owned item from your inventory.
+Use an eligible owned item.
 
-Usable item types:
-
-```text
-Consumable — removed from inventory after use
-Permanent — remains in inventory after use
-```
-
-Non-usable items may be collectibles, decorative items, or staff-controlled RP assets.
+Consumables lose one quantity after successful use. Permanent items remain in inventory. Invalid item names receive contextual guidance and suggestions.
 
 ---
 
-## Item Metadata
+# Black Badge Citations
 
-V1.5 shop items may include:
+### `/fines`
 
-```text
-category
-rarity
-usable
-consumable
-use_message
-stock
-```
+Privately review your OPEN citations and recent PAID or VOID history.
 
-### Category
+Private administrative notes are never displayed in the citizen view.
 
-Used to organize the shop.
+### `/payfine`
 
-### Rarity
+Pay one OPEN citation issued to your own account.
 
-Current rarity values:
+Rules:
 
 ```text
-Common
-Uncommon
-Rare
-Luxury
-Restricted
-Exordium-Class
+Only the cited citizen may pay
+The full amount is required
+Partial payment is not supported
+The citizen balance cannot become negative
+PAID citations cannot be paid again
+VOID citations cannot be paid
+Payment removes credits from circulation
 ```
 
-### Usable
-
-Determines whether the item can be used with `/use`.
-
-### Consumable
-
-Determines whether using the item removes one quantity from inventory.
-
-### Use Message
-
-Custom message displayed when the item is used.
-
-### Stock
-
-Controls limited item availability.
+Citation states:
 
 ```text
-NULL / blank = Unlimited
-0 = Sold Out
-Positive number = Remaining stock
+OPEN — unresolved and eligible for payment, collection, or voiding
+PAID — resolved through citizen payment or administrative collection
+VOID — cancelled by authorized staff
 ```
+
+PAID and VOID are terminal states.
 
 ---
 
-## Staff Commands
+# Organizations
 
-All staff commands are grouped under:
-
-```text
-/admin
-```
-
-### `/admin addcredits`
-
-Add Nexus Credits to a citizen.
-
-### `/admin removecredits`
-
-Remove Nexus Credits from a citizen.
-
-### `/admin setbalance`
-
-Set a citizen balance.
-
-### `/admin resetbalance`
-
-Reset a citizen balance.
-
-### `/admin additem`
-
-Create a new shop item.
-
-Supported metadata:
+Organization types supported by V2:
 
 ```text
-name
-price
-description
-category
-rarity
-stock
+BUSINESS
+INSTITUTION
+GOVERNMENT
 ```
 
-### `/admin edititem`
+`FACTION` is reserved in the schema for future development.
 
-Edit an existing shop item.
+## Public Organization Commands
 
-Supported edits include:
+### `/org info`
+
+View an active organization’s public profile.
+
+### `/org balance`
+
+View an organization balance when your membership role permits it.
+
+### `/org members`
+
+View an organization roster when authorized.
+
+### `/org deposit`
+
+Deposit personal credits into an organization to which you belong.
+
+### `/org payuser`
+
+Pay a citizen from an organization account.
+
+### `/org payorg`
+
+Pay another active organization.
+
+### `/org ledger`
+
+Review private organization transaction history when authorized.
+
+## Organization Roles
+
+### `OWNER`
+
+Owners have full organization authority, including financial commands and leadership control.
+
+The final active owner cannot be accidentally removed or demoted.
+
+### `MANAGER`
+
+Managers may:
 
 ```text
-name
-price
-description
-active status
-category
-rarity
-stock
+Deposit funds
+Pay citizens
+Pay organizations
+View private balances
+View organization membership
+View the private organization ledger
 ```
 
-### `/admin removeitem`
+Managers cannot seize ownership or remove the final owner.
 
-Deactivate a shop item without deleting historical records.
+### `MEMBER`
 
-### `/admin transactions`
+Members may inspect permitted organization and membership information but cannot issue unrestricted organization payments.
 
-View recent ENVI Ledger transactions for a citizen.
+Users outside an organization have no private organization access.
+
+Inactive organizations and inactive memberships cannot authorize new financial activity.
+
+---
+
+# Administrative Commands
+
+All staff commands require the configured ENVI Ledger administrator role.
+
+## General Economy
 
 ### `/admin status`
 
-View bot maintenance and status information.
+Confirm administrator access.
+
+### `/admin addcredits`
+
+Create credits in a citizen account. A reason is required.
+
+### `/admin removecredits`
+
+Remove available credits from a citizen account. The balance cannot become negative.
+
+### `/admin setbalance`
+
+Set a citizen balance exactly. A reason is required.
+
+### `/admin transactions`
+
+Review recent personal transaction records.
 
 ### `/admin economy`
 
-View economy-wide statistics.
-
-Includes:
-
-```text
-Total users
-Credits in circulation
-Highest balance
-Credits generated
-Credits removed
-Net economy change
-Shop purchases
-Shop spending
-Transfers
-Transfer volume
-Active shop items
-Limited stock items
-Sold out items
-Total inventory quantity held by citizens
-```
+View the complete citizen, organization, commercial, citation, generation, removal, inventory, and reconciliation snapshot.
 
 ### `/admin economyreport`
 
-Generate a SIN News Financial Pulse economy report.
+Generate the SIN News Financial Pulse.
 
-Default behavior is private.
+The report is private by default. Set `public: True` to post it in the current channel.
 
-Use:
+## Item Administration
 
-```text
-public: True
-```
+### `/admin additem`
 
-to post the report publicly in the current channel.
+Create a shop item with complete metadata and an optional seller organization.
+
+### `/admin edititem`
+
+Edit an existing item while preserving purchase and ownership history.
+
+### `/admin removeitem`
+
+Deactivate an item without deleting historical records.
+
+### `/admin iteminfo`
+
+Inspect all item metadata, ownership, purchase, seller, stock, and settlement information.
+
+### `/admin restock`
+
+Add stock to a limited-stock item.
+
+Unlimited items, zero quantities, and negative quantities are rejected.
+
+## Maintenance
+
+### `/admin clearcooldowns`
+
+Clear a citizen’s daily and work cooldown records for controlled testing.
+
+### `/admin resetuser`
+
+Reset one citizen’s local/test economy data after explicit confirmation.
+
+This is a destructive maintenance command and should not be used casually against production users.
+
+## Organization Administration
+
+### `/admin org create`
+
+Create an organization.
+
+### `/admin org edit`
+
+Edit its name, type, or description while preserving history.
+
+### `/admin org deactivate`
+
+Block new organization activity without deleting balances, memberships, or transaction history.
+
+### `/admin org reactivate`
+
+Restore an inactive organization without changing its preserved financial history.
+
+### `/admin org addmember`
+
+Add or reactivate an organization member.
+
+### `/admin org removemember`
+
+Deactivate membership while preserving its historical record.
+
+### `/admin org setrole`
+
+Change an organization member’s role while enforcing final-owner protection.
+
+### `/admin org revenue`
+
+Create controlled organization revenue.
+
+This is external credit generation and appears in economy statistics.
+
+### `/admin org setbalance`
+
+Set an organization balance exactly with a required audited reason.
+
+## Black Badge Administration
+
+### `/admin fine issue`
+
+Issue an OPEN citation.
+
+Issuing a citation does not immediately move credits.
+
+### `/admin fine view`
+
+Inspect the complete staff-facing citation record.
+
+### `/admin fine void`
+
+Permanently transition an OPEN citation to VOID.
+
+Voiding does not alter the citizen balance.
+
+### `/admin fine collect`
+
+Collect an eligible OPEN citation from a citizen who holds the full amount.
+
+Partial collection and negative balances are not allowed.
 
 ---
 
-## Logging
+# Financial Settlement Model
 
-ENVI Ledger sends major economy activity to the configured staff log channel.
+ENVI Ledger separates external generation, external removal, and internal circulation.
 
-Logged activity includes:
+## External Generation
 
 ```text
-Admin credit actions
-Shop item creation/editing/deactivation
-Purchases
-Transfers
-Item use
-Economy-relevant activity
+Daily rewards
+Work rewards
+Administrative citizen additions or positive corrections
+Generated organization revenue
+Positive organization balance corrections
 ```
 
-The log channel is configured with:
+## External Removal
+
+```text
+System-owned shop purchases
+Administrative citizen removals or negative corrections
+Fine payments
+Administrative fine collections
+Negative organization balance corrections
+```
+
+## Internal Circulation
+
+```text
+Citizen-to-citizen transfers
+Citizen deposits into organizations
+Organization payments to citizens
+Organization-to-organization payments
+Commercial purchases
+Business shop-sale revenue
+```
+
+Internal circulation changes ownership but does not create or destroy currency.
+
+---
+
+# Staff Logs
+
+Major activity is sent to the configured staff audit channel.
+
+Examples include:
+
+```text
+Citizen credit changes
+Transfers
+System and commercial purchases
+Item administration and use
+Organization creation and editing
+Membership changes
+Organization deposits and payments
+Organization revenue and balance corrections
+Citation issue, void, payment, and collection
+Unexpected command failures
+```
+
+Central log handling:
+
+```text
+Enforces Discord embed limits
+Adds a timestamp
+Uses V2 staff-audit branding
+Suppresses user and role mentions
+Does not crash completed commands when logging is unavailable
+```
+
+Configure the channel with:
 
 ```env
 LOG_CHANNEL_ID=
@@ -310,9 +428,91 @@ LOG_CHANNEL_ID=
 
 ---
 
-## Environment Variables
+# Error Handling
 
-Create a `.env` file with:
+Expected validation failures receive command-specific guidance.
+
+Unexpected failures receive:
+
+```text
+A safe public explanation
+An incident reference
+A sanitized staff-channel record
+A full console traceback for development diagnosis
+```
+
+Raw database messages, table names, query fragments, filesystem details, and exception text are not posted to users or Discord staff logs.
+
+---
+
+# Database
+
+ENVI Ledger uses SQLite.
+
+Default local path:
+
+```text
+data/envi_ledger.db
+```
+
+Railway persistent-volume path:
+
+```text
+/app/data
+```
+
+Core tables:
+
+```text
+users
+cooldowns
+shop_items
+inventory
+transactions
+organizations
+organization_members
+organization_transactions
+citations
+schema_migrations
+```
+
+Foreign keys are enabled on database connections.
+
+---
+
+# Migration History
+
+Migrations are controlled by:
+
+```text
+services/migration_service.py
+```
+
+Current versions:
+
+| Version | Migration | Purpose |
+|---:|---|---|
+| 150 | `verify_v1_5_item_schema` | Adds/verifies item metadata and stock fields |
+| 200 | `create_v2_organization_schema` | Creates organizations, membership, and organization ledgers |
+| 210 | `add_v2_shop_seller_organization` | Links shop items to optional seller organizations |
+| 220 | `create_v2_citation_schema` | Creates the Black Badge citation ledger |
+
+Migration behavior:
+
+```text
+Runs during startup
+Records completed versions in schema_migrations
+Skips already-applied versions
+Rolls back a failed migration
+Can be tested against disposable database copies
+Preserves existing citizen, inventory, and transaction data
+```
+
+---
+
+# Environment Variables
+
+Create a `.env` file containing:
 
 ```env
 DISCORD_TOKEN=
@@ -321,173 +521,117 @@ ADMIN_ROLE_ID=
 LOG_CHANNEL_ID=
 ```
 
-For local testing, use a separate test bot and test server.
+Use a separate bot token and test server during local development.
 
-Do not use the live Railway bot token locally while Railway is running.
+Do not run the production Railway token locally while the Railway deployment is active.
 
 ---
 
-## Local Development
+# Local Development
 
 Install dependencies:
 
 ```powershell
-python -m pip install -r requirements.txt
-```
-
-Run the bot:
-
-```powershell
-python bot.py
-```
-
-Recommended local setup:
-
-```powershell
+cd C:\Users\rober\Documents\envi-ledger
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+code .
 python bot.py
 ```
 
 If PowerShell blocks activation:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Set-ExecutionPolicy `
+    -Scope Process `
+    -ExecutionPolicy Bypass
+
 .\.venv\Scripts\Activate.ps1
 ```
 
----
-
-## Database
-
-ENVI Ledger uses SQLite.
-
-Default local database path:
-
-```text
-data/envi_ledger.db
-```
-
-Railway deployment uses a persistent volume mounted at:
-
-```text
-/app/data
-```
-
-Database setup runs automatically when the bot starts.
-
-V1.5 migrations are handled by:
-
-```text
-services/migration_service.py
-```
-
-Current migrated shop fields:
-
-```text
-category
-rarity
-usable
-consumable
-use_message
-stock
-```
-
----
-
-## Deployment Notes
-
-The live bot is deployed on Railway.
-
-Before deploying:
+Compile before testing:
 
 ```powershell
-python -m py_compile bot.py cogs\admin.py cogs\economy.py cogs\help.py services\*.py utils\*.py db\database.py
-```
-
-Then test locally with the test bot before pushing changes.
-
----
-
-## V1 Scope
-
-ENVI Ledger V1 focused on the basic economy system:
-
-```text
-Nexus Credits
-User accounts
-Balance
-Daily claim
-Work payout
-Transfers
-Shop
-Purchases
-Inventory
-Leaderboard
-Admin credit tools
-Transaction logs
-Persistent database
+python -m py_compile bot.py
+python -m py_compile cogs\admin.py
+python -m py_compile cogs\economy.py
+python -m py_compile cogs\organization.py
+python -m py_compile cogs\help.py
+python -m compileall -q .
 ```
 
 ---
 
-## V1.5 Scope
+# Deployment
 
-ENVI Ledger V1.5 adds:
+V1.5 remains live until the controlled V2 deployment step.
+
+Before V2 deployment:
 
 ```text
-Shop categories
-Item rarity
-Improved shop display
-Improved inventory display
-Usable items
-Consumable/permanent item behavior
-Custom use messages
-Limited stock
-Stock-aware purchases
-Admin economy statistics
-SIN News economy report
-Updated help and documentation
+Complete local regression testing
+Confirm the feature branch is clean
+Merge V2 into main
+Back up the persistent database
+Verify migration order
+Deploy main to Railway
+Inspect startup and migration logs
+Run live Discord smoke tests
 ```
+
+Never remove or recreate the Railway persistent volume during a normal application deployment.
 
 ---
 
-## Not In V1.5
+# V2 Scope
 
-These features are intentionally reserved for later versions:
+V2 adds:
 
 ```text
-Businesses
-Properties
-Taxes
+Item autocomplete
+Paginated shop display
+Expanded item inspection and restocking
+Improved item-use guidance
+Expanded Shift Assignments
+Expanded organization-linked catalog
+Organization accounts and roles
+Organization deposits and payments
+Organization ledgers
+Commercial shop revenue
+Controlled institutional revenue
+Black Badge citations
+Expanded economy reporting
+V2 help, documentation, logs, and error handling
+```
+
+Explicitly outside V2:
+
+```text
 Loans
-Crime
+Interest
+Taxes
+Property and rent
 Gambling
-Warrants
-Black Badge fines
-Faction banks
-Influence
-Job levels
+Theft and smuggling
+Warrants and bounties
+Partial fine payments
+Automatic fine escalation
+Automatic passive organization income
+Item trading and gifting
 Auctions
-Item trading
-Crafting
-Dashboards
-Automatic scheduled payouts
+Faction gameplay
+Web dashboards
 ```
 
 ---
 
-## Project Identity
+# Project Identity
 
 ENVI Ledger is part of the Exordium Nexus civic infrastructure.
-
-In-world framing:
 
 ```text
 ENVI tracks the credits.
 The Endless Reserve watches the flow.
 Sin City remembers the receipt.
 ```
-
-````

@@ -1,11 +1,21 @@
+from __future__ import annotations
+
 import discord
 
 from utils.constants import ENVI_GREEN
 
 
-def envi_embed(title: str, description: str = "") -> discord.Embed:
+ENVI_FOOTER_TEXT = (
+    "ENVI Ledger v2 • Institutions & Consequences"
+)
+
+
+def envi_embed(
+    title: str,
+    description: str = "",
+) -> discord.Embed:
     """
-    Creates a standard ENVI-styled embed.
+    Creates a standard ENVI V2 embed.
     """
     embed = discord.Embed(
         title=title,
@@ -13,19 +23,43 @@ def envi_embed(title: str, description: str = "") -> discord.Embed:
         color=ENVI_GREEN,
     )
 
-    embed.set_footer(text="ENVI Ledger v1")
+    embed.set_footer(
+        text=ENVI_FOOTER_TEXT
+    )
+
     return embed
 
 
-def envi_error(title: str, reason: str) -> discord.Embed:
+def envi_error(
+    title: str,
+    reason: str,
+) -> discord.Embed:
     """
-    Creates a standard ENVI error embed.
+    Creates a standard ENVI V2 error embed.
+
+    Command code remains responsible for supplying either
+    a deliberate validation message or a safe classified
+    unexpected-error message.
     """
+    clean_reason = str(
+        reason
+    ).strip()
+
+    if not clean_reason:
+        clean_reason = (
+            "No additional guidance was supplied."
+        )
+
     embed = discord.Embed(
         title=title,
-        description=f"Reason: {reason}",
+        description=(
+            f"Reason: {clean_reason}"
+        ),
         color=ENVI_GREEN,
     )
 
-    embed.set_footer(text="ENVI Ledger v1")
+    embed.set_footer(
+        text=ENVI_FOOTER_TEXT
+    )
+
     return embed

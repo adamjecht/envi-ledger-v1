@@ -14,6 +14,9 @@ from services.organization_service import (
     seed_default_organizations,
 )
 from utils.embeds import envi_embed
+from utils.error_handling import (
+    build_command_error_presentation,
+)
 from utils.responses import send_error_response
 
 
@@ -99,25 +102,53 @@ async def on_app_command_error(
     error: app_commands.AppCommandError,
 ):
     """
-    Global slash command error handler.
+    Handles unexpected slash-command errors globally.
 
-    This prevents unexpected command errors from becoming silent
-    'The application did not respond' failures.
+    Users and Discord staff logs receive contextual but
+    sanitized information. The complete raw traceback is
+    retained only in the application console.
     """
-    original_error = getattr(error, "original", error)
+    original_error = getattr(
+        error,
+        "original",
+        error,
+    )
 
-    command_name = "Unknown Command"
+    command_name = (
+        "Unknown Command"
+    )
 
     if interaction.command is not None:
-        command_name = interaction.command.qualified_name
+        command_name = (
+            interaction.command.qualified_name
+        )
 
-    user_text = "Unknown User"
+    user_text = (
+        "Unknown User"
+    )
 
     if interaction.user is not None:
-        user_text = f"{interaction.user} ({interaction.user.id})"
+        user_text = (
+            f"{interaction.user} "
+            f"({interaction.user.id})"
+        )
 
-    error_name = type(original_error).__name__
-    error_message = str(original_error) or "No error message provided."
+    presentation = (
+        build_command_error_presentation(
+            error=error,
+            command_name=command_name,
+            user_text=user_text,
+        )
+    )
+
+    error_name = type(
+        original_error
+    ).__name__
+
+    error_message = (
+        str(original_error)
+        or "No error message provided."
+    )
 
     traceback_text = "".join(
         traceback.format_exception(
@@ -127,33 +158,57 @@ async def on_app_command_error(
         )
     )
 
-    print("\n=== ENVI LEDGER COMMAND ERROR ===")
-    print(f"Command: {command_name}")
-    print(f"User: {user_text}")
-    print(f"Error Type: {error_name}")
-    print(f"Error Message: {error_message}")
-    print(traceback_text)
-    print("=== END ENVI LEDGER COMMAND ERROR ===\n")
-
-    await send_error_response(
-        interaction=interaction,
-        title="ENVI COMMAND FAILURE",
-        reason="An unexpected system fault occurred. The incident has been logged.",
+    print(
+        "\n=== ENVI LEDGER COMMAND ERROR ==="
+    )
+    print(
+        f"Incident: "
+        f"{presentation.incident_id}"
+    )
+    print(
+        f"Command: {command_name}"
+    )
+    print(
+        f"User: {user_text}"
+    )
+    print(
+        f"Category: "
+        f"{presentation.category}"
+    )
+    print(
+        f"Error Type: {error_name}"
+    )
+    print(
+        f"Error Message: {error_message}"
+    )
+    print(
+        traceback_text
+    )
+    print(
+        "=== END ENVI LEDGER COMMAND ERROR ===\n"
     )
 
-    safe_error_message = error_message
+    try:
+        await send_error_response(
+            interaction=interaction,
+            title=presentation.title,
+            reason=(
+                presentation.public_reason
+            ),
+        )
 
-    if len(safe_error_message) > 500:
-        safe_error_message = safe_error_message[:500] + "..."
+    except Exception as response_error:
+        print(
+            "Unable to deliver the safe command "
+            "error response: "
+            f"{type(response_error).__name__}"
+        )
 
     await send_ledger_log(
         bot=interaction.client,
         title="ENVI COMMAND ERROR LOG",
         description=(
-            f"Command: `{command_name}`\n"
-            f"User: `{user_text}`\n"
-            f"Error Type: `{error_name}`\n"
-            f"Error Message: `{safe_error_message}`"
+            presentation.log_description
         ),
     )
 
