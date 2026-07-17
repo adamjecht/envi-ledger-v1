@@ -10,7 +10,131 @@ from utils.constants import (
     ORGANIZATION_REFERENCE_ID_MAX_LENGTH,
     ORGANIZATION_TRANSACTION_REASON_MAX_LENGTH,
     ORGANIZATION_TRANSACTION_TYPE_MAX_LENGTH,
+    ORGANIZATION_TYPE_BUSINESS,
+    ORGANIZATION_TYPE_GOVERNMENT,
+    ORGANIZATION_TYPE_INSTITUTION,
     ORGANIZATION_TYPES,
+)
+
+
+DEFAULT_ORGANIZATIONS = (
+    (
+        "Eclipse",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "Sin City's premier nightlife institution, "
+            "combining public indulgence with exclusive "
+            "upper-level luxury."
+        ),
+    ),
+    (
+        "Obsession",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A luxury identity house specializing in "
+            "fashion, fragrance, styling, and curated "
+            "personal transformation."
+        ),
+    ),
+    (
+        "Forbidden Fruit",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A discreet adult luxury venue offering "
+            "curated indulgence, hospitality, and private "
+            "experiences."
+        ),
+    ),
+    (
+        "Inferno Lounge",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A cobalt-lit aristocratic lounge defined by "
+            "refined service, severe elegance, and the "
+            "culture of Pride."
+        ),
+    ),
+    (
+        "Endless Reserve",
+        ORGANIZATION_TYPE_INSTITUTION,
+        (
+            "Sin City's Gluttony-run financial tower and "
+            "central institution for wealth, accounts, "
+            "and Nexus commerce."
+        ),
+    ),
+    (
+        "SIN News",
+        ORGANIZATION_TYPE_INSTITUTION,
+        (
+            "Sin City's primary news network, reporting "
+            "civic affairs, commerce, entertainment, and "
+            "the city's weekly disorder."
+        ),
+    ),
+    (
+        "Obsidian Halo Entertainment",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A prestige entertainment company managing "
+            "artists, concerts, galas, merchandise, and "
+            "major cultural events."
+        ),
+    ),
+    (
+        "Saint Emiko Medical Complex",
+        ORGANIZATION_TYPE_INSTITUTION,
+        (
+            "A supernatural medical institution providing "
+            "emergency care, treatment, recovery, and "
+            "specialized civic health services."
+        ),
+    ),
+    (
+        "Nexus Rail / Sinlink",
+        ORGANIZATION_TYPE_INSTITUTION,
+        (
+            "Sin City's public transit network connecting "
+            "districts through rail lines, stations, and "
+            "late-night civic transport."
+        ),
+    ),
+    (
+        "Nexus Civic Enforcement Directorate",
+        ORGANIZATION_TYPE_GOVERNMENT,
+        (
+            "Sin City's civic enforcement authority and "
+            "administrator of Black Badge patrols, "
+            "mandates, warrants, and public order."
+        ),
+    ),
+    (
+        "Gremlin's Brew",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "An occult boutique offering hand-poured "
+            "candles, divination tools, spiritual goods, "
+            "herbs, and private consultations."
+        ),
+    ),
+    (
+        "The Cozy Tome",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A neighborhood bookstore and creative refuge "
+            "with books, art supplies, quiet reading "
+            "spaces, and a rooftop garden."
+        ),
+    ),
+    (
+        "Sakura Shrine",
+        ORGANIZATION_TYPE_BUSINESS,
+        (
+            "A peaceful spiritual sanctuary offering "
+            "charms, wishes, refuge, ceremony, and the "
+            "quiet comfort of drifting blossoms."
+        ),
+    ),
 )
 
 
@@ -935,6 +1059,115 @@ def get_organizations(
         for row in rows
     ]
 
+def seed_default_organizations() -> dict:
+    """
+    Creates missing official Nexus organizations.
+
+    Existing organizations are never overwritten,
+    reactivated, renamed, or financially modified.
+
+    This preserves:
+
+    - Existing organization IDs
+    - Current balances
+    - Active or inactive status
+    - Edited descriptions
+    - Memberships
+    - Transaction history
+    """
+    created_names: list[str] = []
+    preserved_names: list[str] = []
+    inactive_names: list[str] = []
+
+    for (
+        name,
+        organization_type,
+        description,
+    ) in DEFAULT_ORGANIZATIONS:
+        existing_organization = (
+            get_organization_by_name(
+                name
+            )
+        )
+
+        if existing_organization is not None:
+            preserved_names.append(
+                str(
+                    existing_organization[
+                        "name"
+                    ]
+                )
+            )
+
+            if (
+                int(
+                    existing_organization[
+                        "active"
+                    ]
+                )
+                != 1
+            ):
+                inactive_names.append(
+                    str(
+                        existing_organization[
+                            "name"
+                        ]
+                    )
+                )
+
+            continue
+
+        created_organization = (
+            create_organization(
+                name=name,
+                organization_type=(
+                    organization_type
+                ),
+                description=description,
+            )
+        )
+
+        created_names.append(
+            str(
+                created_organization[
+                    "name"
+                ]
+            )
+        )
+
+    result = {
+        "total": len(
+            DEFAULT_ORGANIZATIONS
+        ),
+        "created_count": len(
+            created_names
+        ),
+        "preserved_count": len(
+            preserved_names
+        ),
+        "inactive_count": len(
+            inactive_names
+        ),
+        "created_names": tuple(
+            created_names
+        ),
+        "preserved_names": tuple(
+            preserved_names
+        ),
+        "inactive_names": tuple(
+            inactive_names
+        ),
+    }
+
+    print(
+        "Default organizations ready: "
+        f"{result['total']} total, "
+        f"{result['created_count']} created, "
+        f"{result['preserved_count']} preserved, "
+        f"{result['inactive_count']} inactive."
+    )
+
+    return result
 
 def get_organization_balance(
     organization_id: int,

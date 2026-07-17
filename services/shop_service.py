@@ -12,74 +12,490 @@ from utils.constants import (
 )
 
 
-DEFAULT_SHOP_ITEMS = [
-    (
-        "Eclipse Drink Voucher",
-        250,
-        "A voucher redeemable for one standard drink at Eclipse.",
-        "Eclipse Items",
-        "Common",
-        True,
-        True,
-        "Voucher redeemed. Eclipse recognizes your indulgence. Please make poor choices responsibly.",
-        None,
-    ),
-    (
-        "Obsession Perfume Sample",
-        500,
-        "A luxury fragrance sample from Maximillion's Obsession line.",
-        "Obsession Items",
-        "Uncommon",
-        True,
-        True,
-        "Perfume sample applied. Obsession has made note of the version of you trying to surface.",
-        None,
-    ),
-    (
-        "Foxy Delights Dessert Box",
-        300,
-        "A curated dessert box from Foxy Delights.",
-        "Foxy Delights Items",
-        "Common",
-        True,
-        True,
-        "Dessert box opened. Foxy Delights hopes the sugar helps. It usually does not, but hope is adorable.",
-        None,
-    ),
-    (
-        "Black Cab Transit Pass",
-        400,
-        "A short-distance private transit pass through Sin City.",
-        "Transit",
-        "Common",
-        True,
-        True,
-        "Transit pass redeemed. Your route has been logged by ENVI. Comforting? No. Efficient? Yes.",
-        None,
-    ),
-    (
-        "Velvet Obelisk Visitor Pass",
-        1500,
-        "A limited visitor pass for approved Velvet Obelisk access.",
-        "Access Passes",
-        "Rare",
-        True,
-        False,
-        "Visitor pass presented. Velvet Obelisk access credentials recognized. Behave like you were expensive to invite.",
-        None,
-    ),
-    (
-        "Luxury Gift Box",
-        2000,
-        "A premium social gift package for RP scenes.",
-        "Luxury",
-        "Luxury",
-        True,
-        True,
-        "Luxury gift box opened. Someone either likes you, needs something from you, or both. Usually both.",
-        None,
-    ),
-]
+DEFAULT_SHOP_ITEMS: tuple[
+    dict[str, object],
+    ...,
+] = (
+    {
+        "name": "Eclipse Drink Voucher",
+        "price": 250,
+        "description": (
+            "A voucher redeemable for one standard drink "
+            "at Eclipse."
+        ),
+        "category": "Eclipse Items",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Voucher redeemed. Eclipse recognizes your "
+            "indulgence. Please make poor choices "
+            "responsibly."
+        ),
+        "stock": None,
+        "seller_organization_name": "Eclipse",
+    },
+    {
+        "name": "Obsession Perfume Sample",
+        "price": 500,
+        "description": (
+            "A luxury fragrance sample from Maximillion's "
+            "Obsession line."
+        ),
+        "category": "Obsession Items",
+        "rarity": "Uncommon",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Perfume sample applied. Obsession has made "
+            "note of the version of you trying to surface."
+        ),
+        "stock": None,
+        "seller_organization_name": "Obsession",
+    },
+    {
+        "name": "Black Cab Transit Pass",
+        "price": 400,
+        "description": (
+            "A short-distance private transit pass through "
+            "Sin City."
+        ),
+        "category": "Transit",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Transit pass redeemed. Your route has been "
+            "logged by ENVI. Comforting? No. Efficient? "
+            "Yes."
+        ),
+        "stock": None,
+        "seller_organization_name": None,
+    },
+    {
+        "name": "Velvet Obelisk Visitor Pass",
+        "price": 1500,
+        "description": (
+            "A limited visitor pass for approved Velvet "
+            "Obelisk access."
+        ),
+        "category": "Access Passes",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "Visitor pass presented. Velvet Obelisk access "
+            "credentials recognized. Behave like you were "
+            "expensive to invite."
+        ),
+        "stock": None,
+        "seller_organization_name": None,
+    },
+    {
+        "name": "Luxury Gift Box",
+        "price": 2000,
+        "description": (
+            "A premium social gift package for roleplay "
+            "scenes."
+        ),
+        "category": "Luxury",
+        "rarity": "Luxury",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Luxury gift box opened. Someone either likes "
+            "you, needs something from you, or both. "
+            "Usually both."
+        ),
+        "stock": None,
+        "seller_organization_name": None,
+    },
+    {
+        "name": "After Dark Cocktail Flight",
+        "price": 450,
+        "description": (
+            "A curated flight of three miniature Eclipse "
+            "cocktails served beneath violet light."
+        ),
+        "category": "Eclipse Items",
+        "rarity": "Uncommon",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "The flight is served beneath violet light. "
+            "ENVI recommends making only two regrettable "
+            "decisions tonight."
+        ),
+        "stock": None,
+        "seller_organization_name": "Eclipse",
+    },
+    {
+        "name": "Paradise’s Edge Guest Seal",
+        "price": 2000,
+        "description": (
+            "A black-and-gold authenticated guest seal "
+            "modeled after those issued for Eclipse's "
+            "exclusive upper floor."
+        ),
+        "category": "Access Passes",
+        "rarity": "Exordium-Class",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The seal responds with a soft gold pulse. "
+            "Paradise’s Edge recognizes the mark. "
+            "Recognition is not the same as permission."
+        ),
+        "stock": 12,
+        "seller_organization_name": "Eclipse",
+    },
+    {
+        "name": "Obsession Identity Consultation",
+        "price": 900,
+        "description": (
+            "A private Obsession consultation covering "
+            "styling, fragrance, presentation, and curated "
+            "personal transformation."
+        ),
+        "category": "Obsession Items",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Your consultation has been accepted. "
+            "Obsession will not ask who you are. It will "
+            "ask who you intended to become."
+        ),
+        "stock": 30,
+        "seller_organization_name": "Obsession",
+    },
+    {
+        "name": "Gilded Indulgence Token",
+        "price": 850,
+        "description": (
+            "A gold-edged service token accepted for one "
+            "curated house indulgence at Forbidden Fruit."
+        ),
+        "category": "Luxury",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "The token disappears into velvet-gloved "
+            "hands. Forbidden Fruit confirms that "
+            "discretion has already been purchased."
+        ),
+        "stock": 30,
+        "seller_organization_name": "Forbidden Fruit",
+    },
+    {
+        "name": "Cobalt Inferno Reserve",
+        "price": 700,
+        "description": (
+            "A rare blue-black spirit served with a faint "
+            "crimson flame along the rim."
+        ),
+        "category": "Food & Drink",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "The reserve burns cold before turning warm. "
+            "Inferno Lounge records that you handled it "
+            "without embarrassing yourself."
+        ),
+        "stock": 28,
+        "seller_organization_name": "Inferno Lounge",
+    },
+    {
+        "name": "Pride’s Black-Glass Tumbler",
+        "price": 1400,
+        "description": (
+            "A heavy obsidian-black tumbler with cobalt "
+            "detailing and a discreet Inferno crest."
+        ),
+        "category": "Collectibles",
+        "rarity": "Luxury",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The glass catches the city lights without "
+            "reflecting your flaws. Belial would consider "
+            "that suspicious."
+        ),
+        "stock": 16,
+        "seller_organization_name": "Inferno Lounge",
+    },
+    {
+        "name": "Gilded Ledger Bond",
+        "price": 1000,
+        "description": (
+            "A numbered decorative bond certificate issued "
+            "by the Endless Reserve with no redeemable "
+            "financial value."
+        ),
+        "category": "Collectibles",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The bond authenticates successfully. It is "
+            "worth exactly what someone wealthier can be "
+            "convinced it is worth."
+        ),
+        "stock": 50,
+        "seller_organization_name": "Endless Reserve",
+    },
+    {
+        "name": "Endless Reserve Vault Key Replica",
+        "price": 2500,
+        "description": (
+            "A weighted black-and-gold replica of an old "
+            "Endless Reserve ceremonial vault key."
+        ),
+        "category": "Collectibles",
+        "rarity": "Luxury",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The key fits no public lock. ENVI notes that "
+            "this has never stopped anyone ambitious."
+        ),
+        "stock": 10,
+        "seller_organization_name": "Endless Reserve",
+    },
+    {
+        "name": "Who Pissed Off Belial? Desk Mug",
+        "price": 250,
+        "description": (
+            "A SIN News desk mug commemorating the "
+            "network's least responsible recurring "
+            "segment."
+        ),
+        "category": "Collectibles",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "You take a measured sip. Today's answer "
+            "remains under investigation."
+        ),
+        "stock": None,
+        "seller_organization_name": "SIN News",
+    },
+    {
+        "name": "Black Halo Benefit Ticket",
+        "price": 1500,
+        "description": (
+            "An ENVI-authenticated admission ticket to the "
+            "annual Black Halo Benefit."
+        ),
+        "category": "Event Items",
+        "rarity": "Luxury",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Admission authenticated. Formalwear is "
+            "encouraged. Public disgrace remains optional."
+        ),
+        "stock": 25,
+        "seller_organization_name": (
+            "Obsidian Halo Entertainment"
+        ),
+    },
+    {
+        "name": "Fractured Halo Lightstick",
+        "price": 950,
+        "description": (
+            "A black-chrome concert lightstick with violet "
+            "illumination and a suspended fractured halo."
+        ),
+        "category": "Event Items",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The fractured halo ignites in violet. Nearby "
+            "VANTA//V fans immediately become louder."
+        ),
+        "stock": 30,
+        "seller_organization_name": (
+            "Obsidian Halo Entertainment"
+        ),
+    },
+    {
+        "name": "Saint Emiko Recovery Kit",
+        "price": 350,
+        "description": (
+            "A sealed aftercare pack containing restorative "
+            "tonic, sterile wraps, comfort patches, and "
+            "supernatural-safe instructions."
+        ),
+        "category": "General",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Recovery protocol completed. Saint Emiko "
+            "reminds you that surviving recklessness does "
+            "not make it a treatment plan."
+        ),
+        "stock": None,
+        "seller_organization_name": (
+            "Saint Emiko Medical Complex"
+        ),
+    },
+    {
+        "name": "Sinlink Midnight Fare Token",
+        "price": 200,
+        "description": (
+            "A single-use token valid for one late-night "
+            "passage through the Sinlink transit system."
+        ),
+        "category": "Transit",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "Fare accepted. Sinlink advises keeping your "
+            "hands, belongings, and unresolved feuds inside "
+            "the carriage."
+        ),
+        "stock": None,
+        "seller_organization_name": (
+            "Nexus Rail / Sinlink"
+        ),
+    },
+    {
+        "name": "Neon Route Map — Collector Edition",
+        "price": 400,
+        "description": (
+            "A foldout black map of Sin City's rail network "
+            "printed in reactive neon ink."
+        ),
+        "category": "Transit",
+        "rarity": "Uncommon",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The routes illuminate beneath your "
+            "fingertips. Three stations appear that were "
+            "not printed there before."
+        ),
+        "stock": None,
+        "seller_organization_name": (
+            "Nexus Rail / Sinlink"
+        ),
+    },
+    {
+        "name": "Sevenfold Civic Crest Challenge Coin",
+        "price": 1100,
+        "description": (
+            "A heavy black-and-gold commemorative coin "
+            "bearing the NCED's Sevenfold Civic Crest."
+        ),
+        "category": "Black Badge / Civic",
+        "rarity": "Restricted",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The crest catches a thin red light. Possession "
+            "confirms nothing except that the NCED accepted "
+            "your payment."
+        ),
+        "stock": 20,
+        "seller_organization_name": (
+            "Nexus Civic Enforcement Directorate"
+        ),
+    },
+    {
+        "name": "Civic Compliance Handbook — Revised Edition",
+        "price": 175,
+        "description": (
+            "A thick guide to civic obligations, warrant "
+            "etiquette, and avoiding unnecessary Hound "
+            "Response attention."
+        ),
+        "category": "Black Badge / Civic",
+        "rarity": "Common",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "You open the handbook. The first sentence "
+            "reads: Ignorance of the mandate has been "
+            "documented."
+        ),
+        "stock": None,
+        "seller_organization_name": (
+            "Nexus Civic Enforcement Directorate"
+        ),
+    },
+    {
+        "name": "Wax-Sealed Divination Candle",
+        "price": 650,
+        "description": (
+            "A black hand-poured candle sealed in wine-red "
+            "wax and prepared according to a private "
+            "Gremlin's Brew divination ritual."
+        ),
+        "category": "Collectibles",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": True,
+        "use_message": (
+            "The wax pools into a symbol you do not "
+            "recognize. Gremlin's Brew does. It declines "
+            "to explain."
+        ),
+        "stock": 24,
+        "seller_organization_name": "Gremlin's Brew",
+    },
+    {
+        "name": "Rooftop Garden Journal",
+        "price": 400,
+        "description": (
+            "A soft clothbound journal with textured pages, "
+            "a pressed-leaf bookmark, and the faint scent "
+            "of old paper and rooftop soil."
+        ),
+        "category": "Collectibles",
+        "rarity": "Uncommon",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The journal opens to a clean page beneath the "
+            "scent of paper and soil. The Cozy Tome "
+            "considers silence a valid first draft."
+        ),
+        "stock": None,
+        "seller_organization_name": "The Cozy Tome",
+    },
+    {
+        "name": "Blossom-Wish Omamori",
+        "price": 750,
+        "description": (
+            "A pale rose-and-ivory shrine charm containing "
+            "a preserved sakura petal and space for one "
+            "private wish."
+        ),
+        "category": "Collectibles",
+        "rarity": "Rare",
+        "usable": True,
+        "consumable": False,
+        "use_message": (
+            "The charm warms beneath your fingers as petals "
+            "stir without wind. The Sakura Shrine has heard "
+            "the wish. Judgment was not requested."
+        ),
+        "stock": 30,
+        "seller_organization_name": "Sakura Shrine",
+    },
+)
+
+
+RETIRED_DEFAULT_SHOP_ITEMS = (
+    "Foxy Delights Dessert Box",
+)
 
 SHOP_ITEM_SELECT = """
 SELECT
@@ -565,126 +981,426 @@ def restock_limited_item(
 
     return updated_item
 
-
-def seed_default_shop_items() -> None:
+def _get_default_seller_organization_id(
+    connection: sqlite3.Connection,
+    seller_organization_name: object,
+) -> int | None:
     """
-    Adds the default shop items if they do not already exist.
+    Resolves one canonical default-item seller.
 
-    For existing default items, this also upgrades V1.5 metadata
-    only when the item still has old/default values.
+    None represents the system-owned ENVI Commercial
+    Exchange.
+
+    Inactive organizations remain valid stored sellers.
+    Their items will display as unavailable until the
+    organization is reactivated or the item is reassigned.
     """
+    if seller_organization_name is None:
+        return None
 
+    if not isinstance(
+        seller_organization_name,
+        str,
+    ):
+        raise RuntimeError(
+            "Default seller organization names must "
+            "be text."
+        )
+
+    clean_name = (
+        seller_organization_name.strip()
+    )
+
+    if not clean_name:
+        raise RuntimeError(
+            "Default seller organization names cannot "
+            "be blank."
+        )
+
+    row = connection.execute(
+        """
+        SELECT
+            organization_id,
+            name,
+            active
+        FROM organizations
+        WHERE name = ? COLLATE NOCASE
+        """,
+        (clean_name,),
+    ).fetchone()
+
+    if row is None:
+        raise RuntimeError(
+            "Required default seller organization is "
+            f"missing: {clean_name}."
+        )
+
+    return int(
+        row["organization_id"]
+    )
+
+def seed_default_shop_items() -> dict:
+    """
+    Seeds the official 24-item Nexus catalog.
+
+    Missing items are created with their complete metadata
+    and canonical sellers.
+
+    Existing items preserve:
+
+    - Item IDs
+    - Prices
+    - Descriptions
+    - Stock changes
+    - Active or inactive status
+    - Existing non-null seller assignments
+    - Inventory ownership
+    - Purchase history
+
+    Legacy default metadata is upgraded only when it still
+    uses the original generic values.
+
+    Retired default items are deactivated rather than
+    deleted.
+    """
     now = utc_now()
 
-    with get_connection() as connection:
-        for (
-            name,
-            price,
-            description,
-            category,
-            rarity,
-            usable,
-            consumable,
-            use_message,
-            stock,
-        ) in DEFAULT_SHOP_ITEMS:
-            usable_value = 1 if usable else 0
-            consumable_value = 1 if consumable else 0
+    created_names: list[str] = []
+    preserved_names: list[str] = []
+    seller_assigned_names: list[str] = []
+    retired_names: list[str] = []
 
+    try:
+        with get_connection() as connection:
             connection.execute(
-                """
-                INSERT OR IGNORE INTO shop_items (
-                    name,
-                    price,
-                    description,
-                    category,
-                    rarity,
-                    usable,
-                    consumable,
-                    use_message,
-                    stock,
-                    seller_org_id,
-                    active,
-                    created_at,
-                    updated_at
+                "BEGIN IMMEDIATE"
+            )
+
+            seller_ids: dict[
+                object,
+                int | None,
+            ] = {}
+
+            for item_definition in DEFAULT_SHOP_ITEMS:
+                name = str(
+                    item_definition["name"]
                 )
-                VALUES (
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    NULL,
-                    1,
-                    ?,
-                    ?
+                price = int(
+                    item_definition["price"]
                 )
-                """,
-                (
-                    name,
-                    price,
-                    description,
-                    category,
-                    rarity,
-                    usable_value,
-                    consumable_value,
-                    use_message,
-                    stock,
-                    now,
-                    now,
-                ),
-            )
+                description = str(
+                    item_definition["description"]
+                )
+                category = str(
+                    item_definition["category"]
+                )
+                rarity = str(
+                    item_definition["rarity"]
+                )
+                usable = bool(
+                    item_definition["usable"]
+                )
+                consumable = bool(
+                    item_definition["consumable"]
+                )
 
-            connection.execute(
-                """
-                UPDATE shop_items
-                SET
-                    category = ?,
-                    rarity = ?,
-                    updated_at = ?
-                WHERE
-                    name = ?
-                    AND category = ?
-                    AND rarity = ?
-                """,
-                (
-                    category,
-                    rarity,
-                    now,
-                    name,
-                    DEFAULT_SHOP_CATEGORY,
-                    DEFAULT_ITEM_RARITY,
-                ),
-            )
+                use_message_value = (
+                    item_definition[
+                        "use_message"
+                    ]
+                )
+                use_message = (
+                    str(use_message_value)
+                    if use_message_value
+                    is not None
+                    else None
+                )
 
-            connection.execute(
-                """
-                UPDATE shop_items
-                SET
-                    usable = ?,
-                    consumable = ?,
-                    use_message = ?,
-                    updated_at = ?
-                WHERE
-                    name = ?
-                    AND usable = 0
-                    AND consumable = 0
-                    AND use_message IS NULL
-                """,
-                (
-                    usable_value,
-                    consumable_value,
-                    use_message,
-                    now,
-                    name,
-                ),
-            )
+                stock_value = item_definition[
+                    "stock"
+                ]
+                stock = (
+                    int(stock_value)
+                    if stock_value is not None
+                    else None
+                )
 
-        connection.commit()
+                seller_name = item_definition[
+                    "seller_organization_name"
+                ]
+
+                if seller_name not in seller_ids:
+                    seller_ids[seller_name] = (
+                        _get_default_seller_organization_id(
+                            connection=connection,
+                            seller_organization_name=(
+                                seller_name
+                            ),
+                        )
+                    )
+
+                seller_org_id = seller_ids[
+                    seller_name
+                ]
+
+                usable_value = (
+                    1
+                    if usable
+                    else 0
+                )
+                consumable_value = (
+                    1
+                    if consumable
+                    else 0
+                )
+
+                validate_shop_category(
+                    category
+                )
+                validate_item_rarity(
+                    rarity
+                )
+                validate_use_settings(
+                    usable=usable,
+                    consumable=consumable,
+                    use_message=use_message,
+                )
+                normalize_stock(
+                    stock
+                )
+
+                existing_row = connection.execute(
+                    """
+                    SELECT
+                        item_id,
+                        seller_org_id
+                    FROM shop_items
+                    WHERE name = ? COLLATE NOCASE
+                    """,
+                    (name,),
+                ).fetchone()
+
+                if existing_row is None:
+                    connection.execute(
+                        """
+                        INSERT INTO shop_items (
+                            name,
+                            price,
+                            description,
+                            category,
+                            rarity,
+                            usable,
+                            consumable,
+                            use_message,
+                            stock,
+                            seller_org_id,
+                            active,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            ?,
+                            1,
+                            ?,
+                            ?
+                        )
+                        """,
+                        (
+                            name,
+                            price,
+                            description,
+                            category,
+                            rarity,
+                            usable_value,
+                            consumable_value,
+                            use_message,
+                            stock,
+                            seller_org_id,
+                            now,
+                            now,
+                        ),
+                    )
+
+                    created_names.append(
+                        name
+                    )
+                    continue
+
+                preserved_names.append(
+                    name
+                )
+
+                connection.execute(
+                    """
+                    UPDATE shop_items
+                    SET
+                        category = ?,
+                        rarity = ?,
+                        updated_at = ?
+                    WHERE
+                        item_id = ?
+                        AND category = ?
+                        AND rarity = ?
+                    """,
+                    (
+                        category,
+                        rarity,
+                        now,
+                        existing_row["item_id"],
+                        DEFAULT_SHOP_CATEGORY,
+                        DEFAULT_ITEM_RARITY,
+                    ),
+                )
+
+                connection.execute(
+                    """
+                    UPDATE shop_items
+                    SET
+                        usable = ?,
+                        consumable = ?,
+                        use_message = ?,
+                        updated_at = ?
+                    WHERE
+                        item_id = ?
+                        AND usable = 0
+                        AND consumable = 0
+                        AND use_message IS NULL
+                    """,
+                    (
+                        usable_value,
+                        consumable_value,
+                        use_message,
+                        now,
+                        existing_row["item_id"],
+                    ),
+                )
+
+                if (
+                    seller_org_id is not None
+                    and existing_row[
+                        "seller_org_id"
+                    ]
+                    is None
+                ):
+                    connection.execute(
+                        """
+                        UPDATE shop_items
+                        SET
+                            seller_org_id = ?,
+                            updated_at = ?
+                        WHERE item_id = ?
+                        """,
+                        (
+                            seller_org_id,
+                            now,
+                            existing_row[
+                                "item_id"
+                            ],
+                        ),
+                    )
+
+                    seller_assigned_names.append(
+                        name
+                    )
+
+            for retired_name in (
+                RETIRED_DEFAULT_SHOP_ITEMS
+            ):
+                retired_row = connection.execute(
+                    """
+                    SELECT
+                        item_id,
+                        active
+                    FROM shop_items
+                    WHERE name = ? COLLATE NOCASE
+                    """,
+                    (retired_name,),
+                ).fetchone()
+
+                if retired_row is None:
+                    continue
+
+                if int(
+                    retired_row["active"]
+                ) != 1:
+                    continue
+
+                connection.execute(
+                    """
+                    UPDATE shop_items
+                    SET
+                        active = 0,
+                        updated_at = ?
+                    WHERE item_id = ?
+                    """,
+                    (
+                        now,
+                        retired_row["item_id"],
+                    ),
+                )
+
+                retired_names.append(
+                    retired_name
+                )
+
+            connection.commit()
+
+    except sqlite3.Error as error:
+        raise RuntimeError(
+            "The default shop catalog could not be seeded. "
+            "No partial catalog changes were retained."
+        ) from error
+
+    result = {
+        "total": len(
+            DEFAULT_SHOP_ITEMS
+        ),
+        "created_count": len(
+            created_names
+        ),
+        "preserved_count": len(
+            preserved_names
+        ),
+        "seller_assigned_count": len(
+            seller_assigned_names
+        ),
+        "retired_count": len(
+            retired_names
+        ),
+        "created_names": tuple(
+            created_names
+        ),
+        "preserved_names": tuple(
+            preserved_names
+        ),
+        "seller_assigned_names": tuple(
+            seller_assigned_names
+        ),
+        "retired_names": tuple(
+            retired_names
+        ),
+    }
+
+    print(
+        "Default shop catalog ready: "
+        f"{result['total']} active definitions, "
+        f"{result['created_count']} created, "
+        f"{result['preserved_count']} preserved, "
+        f"{result['seller_assigned_count']} seller "
+        "assignment(s) added, "
+        f"{result['retired_count']} retired."
+    )
+
+    return result
 
 
 def get_active_shop_items(

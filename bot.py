@@ -10,6 +10,9 @@ from db.database import initialize_database
 from services.log_channel_service import send_ledger_log
 from services.migration_service import run_database_migrations
 from services.shop_service import seed_default_shop_items
+from services.organization_service import (
+    seed_default_organizations,
+)
 from utils.embeds import envi_embed
 from utils.responses import send_error_response
 
@@ -44,7 +47,7 @@ class ENVILedgerBot(commands.Bot):
         """
         initialize_database()
         run_database_migrations()
-
+        seed_default_organizations()
         seed_default_shop_items()
 
         await self.load_extension("cogs.economy")
