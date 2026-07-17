@@ -11,6 +11,7 @@ from utils.constants import (
     ORGANIZATION_TRANSACTION_ADMIN_BALANCE_SET,
     ORGANIZATION_TRANSACTION_ADMIN_REVENUE,
     ORGANIZATION_TRANSACTION_SHOP_SALE,
+    ORGANIZATION_TRANSACTION_USER_PAYMENT,
     ORGANIZATION_TYPE_BUSINESS,
     TRANSACTION_ADMIN_ADD,
     TRANSACTION_ADMIN_REMOVE,
@@ -554,6 +555,17 @@ def get_economy_stats() -> dict:
             positive=True,
         )
 
+        (
+            institutional_payout_count,
+            institutional_payout_total,
+        ) = _aggregate_organization_transactions(
+            connection=connection,
+            transaction_types=(
+                ORGANIZATION_TRANSACTION_USER_PAYMENT,
+            ),
+            positive=False,
+        )
+
         top_business_row = connection.execute(
             """
             SELECT
@@ -963,6 +975,12 @@ def get_economy_stats() -> dict:
         ),
         "business_sales_total": (
             business_sales_total
+        ),
+        "institutional_payout_count": (
+            institutional_payout_count
+        ),
+        "institutional_payout_total": (
+            institutional_payout_total
         ),
         "commercial_reconciliation_difference": (
             commercial_reconciliation_difference
