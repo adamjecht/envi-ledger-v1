@@ -64,6 +64,7 @@ from utils.citation_pagination import (
     RECENT_CITATION_HISTORY_LIMIT,
 )
 from utils.shop_pagination import ShopPaginationView
+from utils.shop_components_preview import ShopComponentsPreview
 from utils.work_assignments import ADDITIONAL_WORK_ASSIGNMENTS
 
 
@@ -629,6 +630,65 @@ class EconomyCog(commands.Cog):
         )
 
         view.message = await interaction.original_response()
+
+    @app_commands.command(
+        name="shoppreview",
+        description=(
+            "Preview the Components V2 ENVI shop layout."
+        ),
+    )
+    async def shoppreview(
+        self,
+        interaction: discord.Interaction,
+    ):
+        items = get_active_shop_items()
+
+        if not items:
+            embed = envi_error(
+                title="ENVI SHOP PREVIEW UNAVAILABLE",
+                reason=(
+                    "No active shop items are currently "
+                    "registered."
+                ),
+            )
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        bot_user = interaction.client.user
+
+        if bot_user is None:
+            embed = envi_error(
+                title="ENVI SHOP PREVIEW UNAVAILABLE",
+                reason=(
+                    "The ENVI bot identity could not be "
+                    "resolved."
+                ),
+            )
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        view = ShopComponentsPreview(
+            items=items,
+            user_id=interaction.user.id,
+            balance=get_balance(interaction.user.id),
+            thumbnail_url=str(
+                bot_user.display_avatar.url
+            ),
+        )
+
+        await interaction.response.send_message(
+            view=view,
+            ephemeral=True,
+            allowed_mentions=(
+                discord.AllowedMentions.none()
+            ),
+        )
 
     @app_commands.command(
         name="buy",
