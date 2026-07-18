@@ -428,6 +428,21 @@ class EconomyCog(commands.Cog):
             "Lucifer sent you to Edenveil Gardens to inspect a memorial seal. For once, the city was quiet enough to hear itself breathe.",
             "Lucifer asked you to recover a misplaced family document. It was not lost. It was waiting to be respected.",
             "Lucifer assigned you to clean up an old sanctuary chamber beneath the Nexus. Some dust is history. Some dust watches back.",
+            "Lucifer assigned you to bring Nyxeria ice cream. She hugged you instead. Lucifer is still waiting for his hug.",
+            "Lucifer requested you give Nyxeria an allowance. She immediately spent it on snacks.",
+            "Lucifer assigned you to make sure Nyxeria had dinner. She thanked you. Lucifer received no acknowledgment.",
+            "Lucifer instructed you to check on Nyxeria. She adopted you for the afternoon.",
+            "Lucifer assigned you to remind Maximillion to eat lunch. He replied, “After this one thing.” He has said that six times today.",
+            "Lucifer requested you confiscate Maximillion’s paperwork. He somehow produced more.",
+            "Lucifer assigned you to ask Amanei how her day was. She stared at you until the shift ended.",
+            "Lucifer requested you tell Amanei a joke. She asked you to explain why it was supposed to be funny.",
+            "Lucifer assigned you to follow Xenimus and repair everything he accidentally broke. Overtime has been approved.",
+            "Lucifer assigned you to supervise Kori. You quickly realized the assignment was impossible.",
+            "Lucifer assigned you to keep Kori out of trouble. You submitted your resignation halfway through the shift.",
+            "Lucifer assigned you to help Kori interrogate a suspect. You now require therapy.",
+            "Lucifer assigned you to remind Kori that not every inconvenience requires a body count. He disagreed.",
+            "Ximena wanted to hire a few new joytoys. Asks for your help conducting the interviews. You spend several hours fucking the new joytoys and indulged in a pleasurable evening.",
+            "Ximena needed assistance with testing some new equipment for the VIP rooms. You unlocked a new kink. You are officially into feet.",
         ]
 
         assignments.extend(ADDITIONAL_WORK_ASSIGNMENTS)
