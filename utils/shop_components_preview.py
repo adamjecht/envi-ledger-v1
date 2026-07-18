@@ -5,9 +5,9 @@ import math
 import discord
 
 from services.shop_service import (
+    format_item_purchase_status,
     format_item_seller_name,
     format_item_settlement,
-    format_stock,
 )
 from utils.constants import ENVI_GREEN, SHOP_CATEGORIES
 from utils.formatting import format_credits
@@ -184,6 +184,7 @@ class ShopCategorySelect(discord.ui.Select):
             self.shop_view.current_category = selected_value
 
         self.shop_view.current_page = 0
+        self.shop_view.clear_selection()
         self.shop_view.rebuild()
 
         await interaction.response.edit_message(
@@ -217,6 +218,7 @@ class ShopPreviousButton(discord.ui.Button):
         if self.shop_view.current_page > 0:
             self.shop_view.current_page -= 1
 
+        self.shop_view.clear_selection()
         self.shop_view.rebuild()
 
         await interaction.response.edit_message(
@@ -252,12 +254,133 @@ class ShopNextButton(discord.ui.Button):
         if self.shop_view.current_page < total_pages - 1:
             self.shop_view.current_page += 1
 
+        self.shop_view.clear_selection()
         self.shop_view.rebuild()
 
         await interaction.response.edit_message(
             view=self.shop_view,
         )
 
+class ShopItemSelect(discord.ui.Select):
+    """Select one visible item for a purchase dry run."""
+
+    def __init__(
+        self,
+        shop_view: ShopComponentsPreview,
+        *,
+        visible_items: list[dict],
+    ):
+        self.shop_view = shop_view
+
+        options = [
+            discord.SelectOption(
+                label=_shorten_text(
+                    str(item["name"]),
+                    100,
+                ),
+                value=str(item["item_id"]),
+                description=_shorten_text(
+                    format_credits(
+                        int(item["price"])
+                    ),
+                    100,
+                ),
+                emoji=_get_item_emoji(item),
+                default=(
+                    shop_view.selected_item_id
+                    == int(item["item_id"])
+                ),
+            )
+            for item in visible_items
+        ]
+
+        if not options:
+            options = [
+                discord.SelectOption(
+                    label="No items available",
+                    value="none",
+                    description=(
+                        "This category contains no active items."
+                    ),
+                )
+            ]
+
+        super().__init__(
+            custom_id="envi_shop_preview_item",
+            placeholder="Choose one visible item",
+            options=options,
+            min_values=1,
+            max_values=1,
+            disabled=not visible_items,
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        selected_value = self.values[0]
+
+        if selected_value == "none":
+            await interaction.response.send_message(
+                "No active item is available to select.",
+                ephemeral=True,
+            )
+            return
+
+        self.shop_view.selected_item_id = int(
+            selected_value
+        )
+        self.shop_view.dry_run_text = None
+        self.shop_view.rebuild()
+
+        await interaction.response.edit_message(
+            view=self.shop_view,
+        )
+
+class ShopDryRunButton(discord.ui.Button):
+    """Preview one purchase without changing economy data."""
+
+    def __init__(
+        self,
+        shop_view: ShopComponentsPreview,
+        *,
+        disabled: bool,
+    ):
+        self.shop_view = shop_view
+
+        super().__init__(
+            custom_id="envi_shop_preview_purchase",
+            label="Buy 1",
+            emoji="🛒",
+            style=discord.ButtonStyle.success,
+            disabled=disabled,
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        selected_item = (
+            self.shop_view.get_selected_item()
+        )
+
+        if selected_item is None:
+            await interaction.response.send_message(
+                "Select one visible shop item first.",
+                ephemeral=True,
+            )
+            return
+
+        self.shop_view.dry_run_text = (
+            self.shop_view.build_dry_run_text(
+                selected_item
+            )
+        )
+        self.shop_view.rebuild()
+
+        await interaction.response.edit_message(
+            view=self.shop_view,
+        )
 
 class ShopComponentsPreview(discord.ui.LayoutView):
     """
@@ -289,6 +412,8 @@ class ShopComponentsPreview(discord.ui.LayoutView):
 
         self.current_category: str | None = None
         self.current_page = 0
+        self.selected_item_id: int | None = None
+        self.dry_run_text: str | None = None
 
         self.rebuild()
 
@@ -358,6 +483,104 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         )
 
         return filtered_items[start_index:end_index]
+
+    def clear_selection(self) -> None:
+        """Clear the selected item and any dry-run result."""
+
+        self.selected_item_id = None
+        self.dry_run_text = None
+
+    def get_selected_item(self) -> dict | None:
+        """Return the selected item if it is still visible."""
+
+        if self.selected_item_id is None:
+            return None
+
+        for item in self.get_visible_items():
+            if (
+                int(item["item_id"])
+                == self.selected_item_id
+            ):
+                return item
+
+        return None
+
+    def build_dry_run_text(
+        self,
+        item: dict,
+    ) -> str:
+        """
+        Build a purchase projection without changing data.
+
+        This performs no economy, stock, inventory, organization,
+        or transaction service calls.
+        """
+
+        item_name = str(item["name"])
+        item_price = int(item["price"])
+        current_balance = int(self.balance)
+
+        denial_reasons: list[str] = []
+
+        purchase_status = (
+            format_item_purchase_status(item)
+        )
+
+        if purchase_status != "Available":
+            denial_reasons.append(purchase_status)
+
+        stock = item.get("stock")
+
+        if stock is not None and int(stock) <= 0:
+            denial_reasons.append(
+                "The item is sold out."
+            )
+
+        if current_balance < item_price:
+            shortfall = item_price - current_balance
+            denial_reasons.append(
+                "Insufficient balance by "
+                f"{format_credits(shortfall)}."
+            )
+
+        if denial_reasons:
+            reason_text = "\n".join(
+                f"- {reason}"
+                for reason in denial_reasons
+            )
+
+            return (
+                "### 🧪 PURCHASE DRY RUN\n"
+                f"**Item:** {item_name}\n"
+                f"**Price:** {format_credits(item_price)}\n"
+                "**Projected Result:** Purchase denied\n\n"
+                f"{reason_text}\n\n"
+                "-# Preview only"
+                " · No credits or items were changed"
+            )
+
+        projected_balance = (
+            current_balance - item_price
+        )
+
+        settlement = _format_preview_settlement(
+            item
+        )
+
+        return (
+            "### 🧪 PURCHASE DRY RUN\n"
+            f"**Item:** {item_name}\n"
+            f"**Price:** {format_credits(item_price)}\n"
+            f"**Current Balance:** "
+            f"{format_credits(current_balance)}\n"
+            f"**Projected Balance:** "
+            f"{format_credits(projected_balance)}\n"
+            f"**Settlement:** {settlement}\n"
+            "**Projected Result:** Purchase approved\n\n"
+            "-# Preview only"
+            " · No credits, stock, inventory,"
+            " or transactions were changed"
+        )
 
     def build_category_options(
         self,
@@ -495,37 +718,15 @@ class ShopComponentsPreview(discord.ui.LayoutView):
                 )
             )
 
-        purchase_options = [
-            discord.SelectOption(
-                label=_shorten_text(
-                    str(item["name"]),
-                    100,
-                ),
-                value=str(item["item_id"]),
-                description=_shorten_text(
-                    format_credits(
-                        int(item["price"])
-                    ),
-                    100,
-                ),
-                emoji=_get_item_emoji(item),
-            )
-            for item in visible_items
-        ]
-
-        purchase_select = discord.ui.Select(
-            custom_id="envi_shop_preview_item",
-            placeholder=(
-                "Choose an item — purchasing disabled"
-            ),
-            options=purchase_options,
-            min_values=1,
-            max_values=1,
-            disabled=True,
+        purchase_select = ShopItemSelect(
+            self,
+            visible_items=visible_items,
         )
 
         self.add_item(
-            discord.ui.ActionRow(purchase_select)
+            discord.ui.ActionRow(
+                purchase_select
+            )
         )
 
         previous_button = ShopPreviousButton(
@@ -533,18 +734,18 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             disabled=self.current_page == 0,
         )
 
-        purchase_button = discord.ui.Button(
-            custom_id="envi_shop_preview_purchase",
-            label="Buy 1",
-            emoji="🛒",
-            style=discord.ButtonStyle.success,
-            disabled=True,
+        selected_item = self.get_selected_item()
+
+        purchase_button = ShopDryRunButton(
+            self,
+            disabled=selected_item is None,
         )
 
         next_button = ShopNextButton(
             self,
             disabled=(
-                self.current_page >= total_pages - 1
+                self.current_page
+                >= total_pages - 1
             ),
         )
 
@@ -556,10 +757,20 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             )
         )
 
+        if self.dry_run_text is not None:
+            self.add_item(
+                discord.ui.Container(
+                    discord.ui.TextDisplay(
+                        self.dry_run_text
+                    ),
+                    accent_color=ENVI_GREEN,
+                )
+            )
+
         self.add_item(
             discord.ui.TextDisplay(
-                "-# Browsing controls are active"
-                " · Buy 1 remains disabled"
-                " · Use `/buy` for multiple units"
+                "-# Browsing active"
+                " · Buy 1 is a dry run"
+                " · Multiple units: `/buy`"
             )
         )
