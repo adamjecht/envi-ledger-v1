@@ -12,8 +12,10 @@ Currency: ₦C — Nexus Credits
 
 ```text
 Version: V2.0 — Institutions & Consequences
-Status: Pre-release development
-Production: V1.5 remains live until the V2 deployment step
+Status: Stable release
+Production: Live on Railway
+Release Tag: v2.0.0
+Released: July 18, 2026
 ```
 
 Release thesis:
@@ -565,19 +567,51 @@ python -m compileall -q .
 
 # Deployment
 
-V1.5 remains live until the controlled V2 deployment step.
-
-Before V2 deployment:
+ENVI Ledger V2.0 is live on Railway from the `main` branch.
 
 ```text
-Complete local regression testing
-Confirm the feature branch is clean
-Merge V2 into main
-Back up the persistent database
-Verify migration order
-Deploy main to Railway
-Inspect startup and migration logs
-Run live Discord smoke tests
+Release: V2.0 — Institutions & Consequences
+Release Tag: v2.0.0
+Deployment Commit: abc9b6a318619f30d29827aea780335b5318b70b
+Railway Deployment: 7deb6e07-c617-4b08-ad65-99d4893bc4db
+Service: envi-ledger-v1
+Status: Online
+Region: sfo
+Persistent Volume: /app/data
+Production Database: /app/data/envi_ledger.db
+```
+
+Production migrations applied:
+
+```text
+150 — verify_v1_5_item_schema
+200 — create_v2_organization_schema
+210 — add_v2_shop_seller_organization
+220 — create_v2_citation_schema
+```
+
+Release verification completed successfully:
+
+```text
+V1.5 production data preserved
+All four migrations applied exactly once
+Organization framework verified
+Commercial shop settlement verified
+Black Badge citation payment verified
+Economy reporting verified
+Staff logging verified
+Private citation notes remained private
+Database integrity_check returned ok
+Foreign-key integrity remained clean
+Railway deployment remained online
+```
+
+Retained Railway snapshots:
+
+```text
+before_v2_live_deployment_2026-07-18_034821_UTC.db
+before_v2_live_write_tests_2026-07-18_052349_UTC.db
+v2_live_verified_2026-07-18_063202_UTC.db
 ```
 
 Never remove or recreate the Railway persistent volume during a normal application deployment.
