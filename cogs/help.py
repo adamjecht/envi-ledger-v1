@@ -57,9 +57,8 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="Commercial Exchange & Assets",
             value=(
-                "`/shop` — Browse the paginated Exchange.\n"
-                "`/buy` — Purchase a system or "
-                "organization-owned item.\n"
+                "`/shop` — Browse the interactive ENVI Commercial Exchange and purchase one unit.\n"
+                "`/buy` — Purchase a known item by name, including multiple quantities.\n"
                 "`/inventory` — View owned assets.\n"
                 "`/use` — Use an eligible owned item.\n\n"
                 "System purchases remove credits from "

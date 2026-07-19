@@ -64,7 +64,6 @@ from utils.citation_pagination import (
     CitationPaginationView,
     RECENT_CITATION_HISTORY_LIMIT,
 )
-from utils.shop_pagination import ShopPaginationView
 from utils.shop_components import ShopComponentsView
 from utils.work_assignments import ADDITIONAL_WORK_ASSIGNMENTS
 

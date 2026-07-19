@@ -68,24 +68,18 @@ View the V2 command, permissions, and citation guide.
 
 ### `/shop`
 
-Browse the compact paginated ENVI Commercial Exchange.
+Opens the interactive ENVI Commercial Exchange storefront.
 
-The shop displays:
+- Displays three items per page
+- Supports category filtering and page navigation
+- Shows item price, rarity, category, stock, seller, and settlement
+- Shows the citizen’s available balance
+- Allows immediate one-unit purchases
+- Refreshes balance and stock after a purchase
+- Sold-out goods remain visible but cannot be selected
+- Shop sessions expire after five minutes
 
-```text
-Item name
-Price
-Category
-Rarity
-Stock
-Seller
-Settlement type
-Description
-```
-
-System-owned purchases remove credits from circulation.
-
-Organization-owned purchases move credits from the buyer to the seller organization.
+Use `/buy` for purchases involving multiple units.
 
 ### `/buy`
 
