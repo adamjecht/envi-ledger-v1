@@ -18,6 +18,7 @@ from services.economy_service import (
     remove_credits,
 )
 from services.shop_service import (
+    get_shop_item_by_id,
     format_item_purchase_status,
     format_item_seller,
     format_item_seller_mode,
@@ -680,6 +681,9 @@ class EconomyCog(commands.Cog):
             thumbnail_url=str(
                 bot_user.display_avatar.url
             ),
+            purchase_callback=(
+                self._purchase_shop_view_item
+            ),
         )
 
         await interaction.response.send_message(
@@ -816,6 +820,58 @@ class EconomyCog(commands.Cog):
         )
 
         return result
+
+    async def _purchase_shop_view_item(
+        self,
+        interaction: discord.Interaction,
+        item_id: int,
+    ) -> dict:
+        """
+        Purchase one storefront item using its current database record.
+
+        The view supplies an item ID from its displayed snapshot. The
+        item is re-fetched here so renamed, deactivated, repriced, or
+        otherwise changed listings are validated at click time.
+        """
+
+        item = get_shop_item_by_id(item_id)
+
+        if item is None:
+            return {
+                "success": False,
+                "message": (
+                    "That shop item is no longer registered."
+                ),
+                "items": get_active_shop_items(),
+                "balance": get_balance(
+                    interaction.user.id
+                ),
+            }
+
+        try:
+            result = await self._execute_shop_purchase(
+                interaction=interaction,
+                item_name=str(item["name"]),
+                quantity=1,
+            )
+        except (ValueError, RuntimeError) as error:
+            return {
+                "success": False,
+                "message": str(error),
+                "items": get_active_shop_items(),
+                "balance": get_balance(
+                    interaction.user.id
+                ),
+            }
+
+        return {
+            "success": True,
+            "result": result,
+            "items": get_active_shop_items(),
+            "balance": get_balance(
+                interaction.user.id
+            ),
+        }
 
     @app_commands.command(
         name="buy",
