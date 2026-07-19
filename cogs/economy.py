@@ -694,6 +694,10 @@ class EconomyCog(commands.Cog):
             ),
         )
 
+        view.message = (
+            await interaction.original_response()
+        )
+
     async def _log_shop_purchase(
         self,
         *,
@@ -824,28 +828,85 @@ class EconomyCog(commands.Cog):
     async def _purchase_shop_view_item(
         self,
         interaction: discord.Interaction,
-        item_id: int,
+        item_snapshot: dict,
     ) -> dict:
         """
-        Purchase one storefront item using its current database record.
+        Purchase one storefront item after validating its live record.
 
-        The view supplies an item ID from its displayed snapshot. The
-        item is re-fetched here so renamed, deactivated, repriced, or
-        otherwise changed listings are validated at click time.
+        The displayed snapshot is compared with the current listing so
+        a citizen cannot unknowingly buy an item after its price, name,
+        seller, or availability changes.
         """
 
+        item_id = int(item_snapshot["item_id"])
         item = get_shop_item_by_id(item_id)
+
+        refreshed_items = get_active_shop_items()
+        refreshed_balance = get_balance(
+            interaction.user.id
+        )
 
         if item is None:
             return {
                 "success": False,
                 "message": (
-                    "That shop item is no longer registered."
+                    "That shop item is no longer registered. "
+                    "ENVI refreshed the catalog."
                 ),
-                "items": get_active_shop_items(),
-                "balance": get_balance(
-                    interaction.user.id
+                "items": refreshed_items,
+                "balance": refreshed_balance,
+            }
+
+        if int(item.get("active", 0)) != 1:
+            return {
+                "success": False,
+                "message": (
+                    "That shop item is no longer available. "
+                    "ENVI refreshed the catalog."
                 ),
+                "items": refreshed_items,
+                "balance": refreshed_balance,
+            }
+
+        snapshot_seller_id = item_snapshot.get(
+            "seller_org_id"
+        )
+        current_seller_id = item.get(
+            "seller_org_id"
+        )
+
+        if snapshot_seller_id is not None:
+            snapshot_seller_id = int(
+                snapshot_seller_id
+            )
+
+        if current_seller_id is not None:
+            current_seller_id = int(
+                current_seller_id
+            )
+
+        listing_changed = any(
+            (
+                str(item["name"])
+                != str(item_snapshot["name"]),
+                int(item["price"])
+                != int(item_snapshot["price"]),
+                current_seller_id
+                != snapshot_seller_id,
+            )
+        )
+
+        if listing_changed:
+            return {
+                "success": False,
+                "message": (
+                    "This listing changed while your shop "
+                    "session was open. ENVI refreshed the "
+                    "catalog. Review the updated item and "
+                    "select it again."
+                ),
+                "items": refreshed_items,
+                "balance": refreshed_balance,
             }
 
         try:

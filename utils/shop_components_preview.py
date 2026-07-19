@@ -1,6 +1,7 @@
 from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
+import asyncio
 import math
 
 import discord
@@ -13,7 +14,7 @@ from utils.constants import ENVI_GREEN, SHOP_CATEGORIES
 from utils.formatting import format_credits
 
 ShopPurchaseCallback = Callable[
-    [discord.Interaction, int],
+    [discord.Interaction, dict],
     Awaitable[dict],
 ]
 
@@ -175,6 +176,10 @@ class ShopCategorySelect(discord.ui.Select):
             options=shop_view.build_category_options(),
             min_values=1,
             max_values=1,
+            disabled=(
+                shop_view.session_expired
+                or shop_view.purchase_in_progress
+            ),
         )
 
     async def callback(
@@ -316,7 +321,11 @@ class ShopItemSelect(discord.ui.Select):
             options=options,
             min_values=1,
             max_values=1,
-            disabled=not visible_items,
+            disabled=(
+                not visible_items
+                or shop_view.session_expired
+                or shop_view.purchase_in_progress
+            ),
         )
 
     async def callback(
@@ -375,50 +384,68 @@ class ShopPurchaseButton(discord.ui.Button):
             )
             return
 
-        if self.shop_view.purchase_in_progress:
+        if self.shop_view.session_expired:
+            await interaction.response.send_message(
+                "This ENVI shop session has expired. "
+                "Run `/shoppreview` to open a new one.",
+                ephemeral=True,
+            )
+            return
+
+        if self.shop_view.purchase_lock.locked():
             await interaction.response.send_message(
                 "ENVI is already processing this purchase.",
                 ephemeral=True,
             )
             return
 
-        self.shop_view.purchase_in_progress = True
+        selected_snapshot = dict(selected_item)
 
-        await interaction.response.defer()
+        async with self.shop_view.purchase_lock:
+            self.shop_view.purchase_in_progress = True
+            self.shop_view.rebuild()
 
-        try:
-            outcome = await self.shop_view.purchase_callback(
-                interaction,
-                int(selected_item["item_id"]),
+            await interaction.response.edit_message(
+                view=self.shop_view,
             )
-        except Exception:
+
+            try:
+                outcome = (
+                    await self.shop_view.purchase_callback(
+                        interaction,
+                        selected_snapshot,
+                    )
+                )
+            except Exception:
+                self.shop_view.purchase_in_progress = False
+                self.shop_view.selected_item_id = None
+                self.shop_view.purchase_result_text = (
+                    "### ⚠️ PURCHASE ERROR\n"
+                    "An unexpected error interrupted the "
+                    "storefront response. Verify your balance "
+                    "and inventory before trying again.\n\n"
+                    "-# The purchase service may have completed"
+                    " · Check ENVI staff logs"
+                )
+                self.shop_view.purchase_result_accent_color = (
+                    PURCHASE_DENIED_ACCENT_COLOR
+                )
+                self.shop_view.rebuild()
+
+                await interaction.edit_original_response(
+                    view=self.shop_view,
+                )
+                raise
+
             self.shop_view.purchase_in_progress = False
-            self.shop_view.selected_item_id = None
-            self.shop_view.purchase_result_text = (
-                "### ⚠️ PURCHASE ERROR\n"
-                "An unexpected error interrupted the storefront "
-                "response. Check the ENVI runtime logs before "
-                "trying again.\n\n"
-                "-# The purchase service may have completed"
-                " · Verify your balance and inventory"
-            )
-            self.shop_view.purchase_result_accent_color = (
-                PURCHASE_DENIED_ACCENT_COLOR
+            self.shop_view.apply_purchase_outcome(
+                outcome
             )
             self.shop_view.rebuild()
 
             await interaction.edit_original_response(
                 view=self.shop_view,
             )
-            raise
-
-        self.shop_view.purchase_in_progress = False
-        self.shop_view.apply_purchase_outcome(outcome)
-        self.shop_view.rebuild()
-
-        await interaction.edit_original_response(
-            view=self.shop_view,
-        )
 
 class ShopComponentsPreview(discord.ui.LayoutView):
     """
@@ -456,6 +483,9 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         self.purchase_result_text: str | None = None
         self.purchase_result_accent_color: int | None = None
         self.purchase_in_progress = False
+        self.purchase_lock = asyncio.Lock()
+        self.session_expired = False
+        self.message = None
 
         self.rebuild()
 
@@ -463,12 +493,15 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         self,
         interaction: discord.Interaction,
     ) -> bool:
-        """
-        Restrict this preview to the user who opened it.
+        """Restrict the shop session to its owner."""
 
-        The response is currently ephemeral, but the explicit check keeps
-        the view safe if its delivery behavior changes later.
-        """
+        if self.session_expired:
+            await interaction.response.send_message(
+                "This ENVI shop session has expired. "
+                "Run `/shoppreview` to open a new one.",
+                ephemeral=True,
+            )
+            return False
 
         if interaction.user.id == self.user_id:
             return True
@@ -478,6 +511,24 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             ephemeral=True,
         )
         return False
+
+    async def on_timeout(self) -> None:
+        """Expire the session and disable its controls."""
+
+        self.session_expired = True
+        self.purchase_in_progress = False
+        self.selected_item_id = None
+        self.rebuild()
+
+        if self.message is None:
+            return
+
+        try:
+            await self.message.edit(
+                view=self,
+            )
+        except discord.HTTPException:
+            pass
 
     def get_filtered_items(self) -> list[dict]:
         """Return active items matching the selected category."""
@@ -800,17 +851,22 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             )
         )
 
+        selected_item = self.get_selected_item()
+
         previous_button = ShopPreviousButton(
             self,
-            disabled=self.current_page == 0,
+            disabled=(
+                self.current_page == 0
+                or self.session_expired
+                or self.purchase_in_progress
+            ),
         )
-
-        selected_item = self.get_selected_item()
 
         purchase_button = ShopPurchaseButton(
             self,
             disabled=(
                 selected_item is None
+                or self.session_expired
                 or self.purchase_in_progress
             ),
         )
@@ -820,6 +876,8 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             disabled=(
                 self.current_page
                 >= total_pages - 1
+                or self.session_expired
+                or self.purchase_in_progress
             ),
         )
 
@@ -844,10 +902,25 @@ class ShopComponentsPreview(discord.ui.LayoutView):
                 )
             )
 
-        self.add_item(
-            discord.ui.TextDisplay(
+        if self.session_expired:
+            footer_text = (
+                "-# Shop session expired"
+                " · Run `/shoppreview` to reopen"
+            )
+        elif self.purchase_in_progress:
+            footer_text = (
+                "-# ENVI is processing your purchase"
+                " · Controls are temporarily locked"
+            )
+        else:
+            footer_text = (
                 "-# Browsing active"
                 " · Buy 1 purchases immediately"
                 " · Multiple units: `/buy`"
+            )
+
+        self.add_item(
+            discord.ui.TextDisplay(
+                footer_text
             )
         )
