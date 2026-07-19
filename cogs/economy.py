@@ -690,59 +690,17 @@ class EconomyCog(commands.Cog):
             ),
         )
 
-    @app_commands.command(
-        name="buy",
-        description=(
-            "Purchase an item from the "
-            "ENVI Commercial Exchange."
-        ),
-    )
-    @app_commands.describe(
-        item_name=(
-            "Start typing the name of an "
-            "available shop item."
-        ),
-        quantity=(
-            "How many copies of the item "
-            "you want to purchase."
-        ),
-    )
-    @app_commands.autocomplete(
-        item_name=buy_item_autocomplete,
-    )
-    async def buy(
+    async def _log_shop_purchase(
         self,
+        *,
         interaction: discord.Interaction,
-        item_name: str,
-        quantity: int = 1,
-    ):
-        await interaction.response.defer()
+        result: dict,
+    ) -> None:
+        """Send the complete staff audit log for one shop purchase."""
 
         user = interaction.user
-
-        ensure_user(
-            user_id=user.id,
-            display_name=user.display_name,
-        )
-
-        try:
-            result = purchase_shop_item(
-                user_id=user.id,
-                item_name=item_name,
-                quantity=quantity,
-            )
-        except (ValueError, RuntimeError) as error:
-            embed = envi_error(
-                title="ENVI PURCHASE DENIED",
-                reason=str(error),
-            )
-            await interaction.followup.send(
-                embed=embed,
-                ephemeral=True,
-            )
-            return
-
         item = result["item"]
+
         personal_transaction = result[
             "personal_transaction"
         ]
@@ -753,23 +711,13 @@ class EconomyCog(commands.Cog):
             "seller_organization"
         ]
 
-        seller_text = format_item_seller(
+        seller_text = format_item_seller(item)
+        seller_mode = format_item_seller_mode(item)
+        purchase_status = format_item_purchase_status(
             item
         )
-        seller_mode = (
-            format_item_seller_mode(
-                item
-            )
-        )
-        purchase_status = (
-            format_item_purchase_status(
-                item
-            )
-        )
-        settlement_type = (
-            format_item_settlement(
-                item
-            )
+        settlement_type = format_item_settlement(
+            item
         )
         remaining_stock_text = format_stock(
             result["remaining_stock"]
@@ -833,6 +781,98 @@ class EconomyCog(commands.Cog):
                 f"`{personal_transaction['transaction_id']}`\n"
                 f"{seller_finance_log}"
             ),
+        )
+
+    async def _execute_shop_purchase(
+        self,
+        *,
+        interaction: discord.Interaction,
+        item_name: str,
+        quantity: int,
+    ) -> dict:
+        """
+        Execute one shop purchase through the atomic purchase service.
+
+        Both /buy and the Components V2 storefront use this method so
+        financial behavior and staff auditing cannot drift apart.
+        """
+
+        user = interaction.user
+
+        ensure_user(
+            user_id=user.id,
+            display_name=user.display_name,
+        )
+
+        result = purchase_shop_item(
+            user_id=user.id,
+            item_name=item_name,
+            quantity=quantity,
+        )
+
+        await self._log_shop_purchase(
+            interaction=interaction,
+            result=result,
+        )
+
+        return result
+
+    @app_commands.command(
+        name="buy",
+        description=(
+            "Purchase an item from the "
+            "ENVI Commercial Exchange."
+        ),
+    )
+    @app_commands.describe(
+        item_name=(
+            "Start typing the name of an "
+            "available shop item."
+        ),
+        quantity=(
+            "How many copies of the item "
+            "you want to purchase."
+        ),
+    )
+    @app_commands.autocomplete(
+        item_name=buy_item_autocomplete,
+    )
+    async def buy(
+        self,
+        interaction: discord.Interaction,
+        item_name: str,
+        quantity: int = 1,
+    ):
+        await interaction.response.defer()
+
+        user = interaction.user
+
+        try:
+            result = await self._execute_shop_purchase(
+                interaction=interaction,
+                item_name=item_name,
+                quantity=quantity,
+            )
+        except (ValueError, RuntimeError) as error:
+            embed = envi_error(
+                title="ENVI PURCHASE DENIED",
+                reason=str(error),
+            )
+            await interaction.followup.send(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        item = result["item"]
+
+        seller_text = format_item_seller(item)
+        seller_mode = format_item_seller_mode(item)
+        settlement_type = format_item_settlement(
+            item
+        )
+        remaining_stock_text = format_stock(
+            result["remaining_stock"]
         )
 
         embed = envi_embed(
