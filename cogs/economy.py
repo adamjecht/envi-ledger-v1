@@ -65,7 +65,7 @@ from utils.citation_pagination import (
     RECENT_CITATION_HISTORY_LIMIT,
 )
 from utils.shop_pagination import ShopPaginationView
-from utils.shop_components_preview import ShopComponentsPreview
+from utils.shop_components import ShopComponentsView
 from utils.work_assignments import ADDITIONAL_WORK_ASSIGNMENTS
 
 
@@ -571,82 +571,27 @@ class EconomyCog(commands.Cog):
 
     @app_commands.command(
         name="shop",
-        description="View the ENVI Commercial Exchange.",
-    )
-    @app_commands.describe(
-        category="Optional category filter for the shop.",
-    )
-    @app_commands.choices(
-        category=[
-            app_commands.Choice(
-                name=category,
-                value=category,
-            )
-            for category in SHOP_CATEGORIES
-        ],
+        description=(
+            "Browse and purchase goods from the "
+            "ENVI Commercial Exchange."
+        ),
     )
     async def shop(
         self,
         interaction: discord.Interaction,
-        category: app_commands.Choice[str] | None = None,
     ):
-        selected_category = (
-            category.value
-            if category is not None
-            else None
+        user = interaction.user
+
+        ensure_user(
+            user_id=user.id,
+            display_name=user.display_name,
         )
 
-        items = get_active_shop_items(selected_category)
-
-        if not items:
-            category_text = (
-                f" in category `{selected_category}`"
-                if selected_category is not None
-                else ""
-            )
-
-            embed = envi_error(
-                title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
-                reason=(
-                    "No active shop items are currently registered"
-                    f"{category_text}."
-                ),
-            )
-
-            await interaction.response.send_message(
-                embed=embed,
-                ephemeral=True,
-            )
-            return
-
-        view = ShopPaginationView(
-            items=items,
-            user_id=interaction.user.id,
-            category=selected_category,
-        )
-
-        await interaction.response.send_message(
-            embed=view.build_embed(),
-            view=view,
-        )
-
-        view.message = await interaction.original_response()
-
-    @app_commands.command(
-        name="shoppreview",
-        description=(
-            "Preview the Components V2 ENVI shop layout."
-        ),
-    )
-    async def shoppreview(
-        self,
-        interaction: discord.Interaction,
-    ):
         items = get_active_shop_items()
 
         if not items:
             embed = envi_error(
-                title="ENVI SHOP PREVIEW UNAVAILABLE",
+                title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
                 reason=(
                     "No active shop items are currently "
                     "registered."
@@ -662,7 +607,7 @@ class EconomyCog(commands.Cog):
 
         if bot_user is None:
             embed = envi_error(
-                title="ENVI SHOP PREVIEW UNAVAILABLE",
+                title="ENVI COMMERCIAL EXCHANGE UNAVAILABLE",
                 reason=(
                     "The ENVI bot identity could not be "
                     "resolved."
@@ -674,10 +619,10 @@ class EconomyCog(commands.Cog):
             )
             return
 
-        view = ShopComponentsPreview(
+        view = ShopComponentsView(
             items=items,
-            user_id=interaction.user.id,
-            balance=get_balance(interaction.user.id),
+            user_id=user.id,
+            balance=get_balance(user.id),
             thumbnail_url=str(
                 bot_user.display_avatar.url
             ),
@@ -696,6 +641,90 @@ class EconomyCog(commands.Cog):
 
         view.message = (
             await interaction.original_response()
+        )
+
+
+    @app_commands.command(
+        name="buy",
+        description=(
+            "Purchase an item from the "
+            "ENVI Commercial Exchange."
+        ),
+    )
+    @app_commands.describe(
+        item_name=(
+            "Start typing the name of an "
+            "available shop item."
+        ),
+        quantity=(
+            "How many copies of the item "
+            "you want to purchase."
+        ),
+    )
+    @app_commands.autocomplete(
+        item_name=buy_item_autocomplete,
+    )
+    async def buy(
+        self,
+        interaction: discord.Interaction,
+        item_name: str,
+        quantity: int = 1,
+    ):
+        await interaction.response.defer()
+
+        user = interaction.user
+
+        try:
+            result = await self._execute_shop_purchase(
+                interaction=interaction,
+                item_name=item_name,
+                quantity=quantity,
+            )
+        except (ValueError, RuntimeError) as error:
+            embed = envi_error(
+                title="ENVI PURCHASE DENIED",
+                reason=str(error),
+            )
+            await interaction.followup.send(
+                embed=embed,
+                ephemeral=True,
+            )
+            return
+
+        item = result["item"]
+
+        seller_text = format_item_seller(item)
+        seller_mode = format_item_seller_mode(item)
+        settlement_type = format_item_settlement(
+            item
+        )
+        remaining_stock_text = format_stock(
+            result["remaining_stock"]
+        )
+
+        embed = envi_embed(
+            title="ENVI PURCHASE CONFIRMED",
+            description=(
+                f"Citizen: {user.mention}\n"
+                f"Item: **{item['name']}**\n"
+                f"Seller: **{seller_text}**\n"
+                f"Purchase Type: **{seller_mode}**\n"
+                f"Settlement: **{settlement_type}**\n"
+                f"Category: `{item['category']}`"
+                f" | Rarity: `{item['rarity']}`\n"
+                f"Quantity: **{result['quantity']}**\n"
+                f"Total: **{format_credits(result['total_price'])}**\n"
+                f"Stock Remaining: **{remaining_stock_text}**\n"
+                "Inventory Quantity: "
+                f"**{result['inventory_quantity']}**\n"
+                "Updated Balance: "
+                f"**{format_credits(result['user']['balance'])}**\n"
+                f"Reference: `{result['reference_id']}`"
+            ),
+        )
+
+        await interaction.followup.send(
+            embed=embed
         )
 
     async def _log_shop_purchase(
@@ -933,89 +962,6 @@ class EconomyCog(commands.Cog):
                 interaction.user.id
             ),
         }
-
-    @app_commands.command(
-        name="buy",
-        description=(
-            "Purchase an item from the "
-            "ENVI Commercial Exchange."
-        ),
-    )
-    @app_commands.describe(
-        item_name=(
-            "Start typing the name of an "
-            "available shop item."
-        ),
-        quantity=(
-            "How many copies of the item "
-            "you want to purchase."
-        ),
-    )
-    @app_commands.autocomplete(
-        item_name=buy_item_autocomplete,
-    )
-    async def buy(
-        self,
-        interaction: discord.Interaction,
-        item_name: str,
-        quantity: int = 1,
-    ):
-        await interaction.response.defer()
-
-        user = interaction.user
-
-        try:
-            result = await self._execute_shop_purchase(
-                interaction=interaction,
-                item_name=item_name,
-                quantity=quantity,
-            )
-        except (ValueError, RuntimeError) as error:
-            embed = envi_error(
-                title="ENVI PURCHASE DENIED",
-                reason=str(error),
-            )
-            await interaction.followup.send(
-                embed=embed,
-                ephemeral=True,
-            )
-            return
-
-        item = result["item"]
-
-        seller_text = format_item_seller(item)
-        seller_mode = format_item_seller_mode(item)
-        settlement_type = format_item_settlement(
-            item
-        )
-        remaining_stock_text = format_stock(
-            result["remaining_stock"]
-        )
-
-        embed = envi_embed(
-            title="ENVI PURCHASE CONFIRMED",
-            description=(
-                f"Citizen: {user.mention}\n"
-                f"Item: **{item['name']}**\n"
-                f"Seller: **{seller_text}**\n"
-                f"Purchase Type: **{seller_mode}**\n"
-                f"Settlement: **{settlement_type}**\n"
-                f"Category: `{item['category']}`"
-                f" | Rarity: `{item['rarity']}`\n"
-                f"Quantity: **{result['quantity']}**\n"
-                f"Total: **{format_credits(result['total_price'])}**\n"
-                f"Stock Remaining: **{remaining_stock_text}**\n"
-                "Inventory Quantity: "
-                f"**{result['inventory_quantity']}**\n"
-                "Updated Balance: "
-                f"**{format_credits(result['user']['balance'])}**\n"
-                f"Reference: `{result['reference_id']}`"
-            ),
-        )
-
-        await interaction.followup.send(
-            embed=embed
-        )
 
     @app_commands.command(
         name="inventory",

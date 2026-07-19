@@ -18,8 +18,8 @@ ShopPurchaseCallback = Callable[
     Awaitable[dict],
 ]
 
-SHOP_PREVIEW_ITEMS_PER_PAGE = 3
-SHOP_PREVIEW_TIMEOUT_SECONDS = 300.0
+SHOP_ITEMS_PER_PAGE = 3
+SHOP_SESSION_TIMEOUT_SECONDS = 300.0
 
 
 RARITY_SYMBOLS: dict[str, str] = {
@@ -104,19 +104,25 @@ def _get_rarity_accent_color(rarity: str) -> int:
         0x95A5A6,
     )
 
-def _format_preview_stock(stock: int | None) -> str:
+def _format_shop_stock(
+    stock: int | None,
+) -> str:
     """Format stock for the customer-facing shop display."""
 
     if stock is None:
         return "∞ Unlimited"
 
     quantity = int(stock)
+
+    if quantity <= 0:
+        return "⛔ Sold Out"
+
     noun = "unit" if quantity == 1 else "units"
 
     return f"📦 {quantity:,} {noun} remaining"
 
 
-def _format_preview_settlement(item: dict) -> str:
+def _format_shop_settlement(item: dict) -> str:
     """Shorten internal settlement terminology for shop customers."""
 
     settlement = str(format_item_settlement(item))
@@ -142,9 +148,9 @@ def _build_item_text(item: dict) -> str:
     item_emoji = _get_item_emoji(item)
     rarity_symbol = _get_rarity_symbol(item_rarity)
 
-    stock_text = _format_preview_stock(item["stock"])
+    stock_text = _format_shop_stock(item["stock"])
     seller_name = format_item_seller_name(item)
-    settlement = _format_preview_settlement(item)
+    settlement = _format_shop_settlement(item)
 
     return (
         f"### {item_emoji} {item_name}\n"
@@ -163,12 +169,12 @@ class ShopCategorySelect(discord.ui.Select):
 
     def __init__(
         self,
-        shop_view: ShopComponentsPreview,
+        shop_view: ShopComponentsView,
     ):
         self.shop_view = shop_view
 
         super().__init__(
-            custom_id="envi_shop_preview_category",
+            custom_id="envi_shop_category",
             placeholder=(
                 shop_view.current_category
                 or "All Categories"
@@ -207,14 +213,14 @@ class ShopPreviousButton(discord.ui.Button):
 
     def __init__(
         self,
-        shop_view: ShopComponentsPreview,
+        shop_view: ShopComponentsView,
         *,
         disabled: bool,
     ):
         self.shop_view = shop_view
 
         super().__init__(
-            custom_id="envi_shop_preview_previous",
+            custom_id="envi_shop_previous",
             label="Prev",
             emoji="◀️",
             style=discord.ButtonStyle.secondary,
@@ -241,14 +247,14 @@ class ShopNextButton(discord.ui.Button):
 
     def __init__(
         self,
-        shop_view: ShopComponentsPreview,
+        shop_view: ShopComponentsView,
         *,
         disabled: bool,
     ):
         self.shop_view = shop_view
 
         super().__init__(
-            custom_id="envi_shop_preview_next",
+            custom_id="envi_shop_next",
             label="Next",
             emoji="▶️",
             style=discord.ButtonStyle.secondary,
@@ -276,11 +282,20 @@ class ShopItemSelect(discord.ui.Select):
 
     def __init__(
         self,
-        shop_view: ShopComponentsPreview,
+        shop_view: ShopComponentsView,
         *,
         visible_items: list[dict],
     ):
         self.shop_view = shop_view
+
+        purchasable_items = [
+            item
+            for item in visible_items
+            if (
+                item.get("stock") is None
+                or int(item["stock"]) > 0
+            )
+        ]
 
         options = [
             discord.SelectOption(
@@ -301,28 +316,28 @@ class ShopItemSelect(discord.ui.Select):
                     == int(item["item_id"])
                 ),
             )
-            for item in visible_items
+            for item in purchasable_items
         ]
 
         if not options:
             options = [
                 discord.SelectOption(
-                    label="No items available",
+                    label="No purchasable items",
                     value="none",
                     description=(
-                        "This category contains no active items."
+                        "Every item on this page is sold out."
                     ),
                 )
             ]
 
         super().__init__(
-            custom_id="envi_shop_preview_item",
+            custom_id="envi_shop_item",
             placeholder="Choose one visible item",
             options=options,
             min_values=1,
             max_values=1,
             disabled=(
-                not visible_items
+                not purchasable_items
                 or shop_view.session_expired
                 or shop_view.purchase_in_progress
             ),
@@ -336,7 +351,7 @@ class ShopItemSelect(discord.ui.Select):
 
         if selected_value == "none":
             await interaction.response.send_message(
-                "No active item is available to select.",
+                "No purchasable item is available on this page.",
                 ephemeral=True,
             )
             return
@@ -357,14 +372,14 @@ class ShopPurchaseButton(discord.ui.Button):
 
     def __init__(
         self,
-        shop_view: ShopComponentsPreview,
+        shop_view: ShopComponentsView,
         *,
         disabled: bool,
     ):
         self.shop_view = shop_view
 
         super().__init__(
-            custom_id="envi_shop_preview_purchase",
+            custom_id="envi_shop_purchase",
             label="Buy 1",
             emoji="🛒",
             style=discord.ButtonStyle.success,
@@ -387,7 +402,7 @@ class ShopPurchaseButton(discord.ui.Button):
         if self.shop_view.session_expired:
             await interaction.response.send_message(
                 "This ENVI shop session has expired. "
-                "Run `/shoppreview` to open a new one.",
+                "Run `/shop` to open a new one.",
                 ephemeral=True,
             )
             return
@@ -447,15 +462,13 @@ class ShopPurchaseButton(discord.ui.Button):
                 view=self.shop_view,
             )
 
-class ShopComponentsPreview(discord.ui.LayoutView):
+class ShopComponentsView(discord.ui.LayoutView):
     """
-    Interactive Components V2 browsing preview.
+    Interactive Components V2 storefront for the ENVI shop.
 
-    Category filtering and pagination are active.
-
-    Purchasing remains intentionally disabled. This preview performs no
-    purchases, inventory changes, stock changes, balance changes, or
-    transaction logging.
+    The view supports category filtering, pagination, one-unit
+    purchases, refreshed catalog state, session ownership, duplicate
+    purchase protection, and session expiration.
     """
 
     def __init__(
@@ -468,7 +481,7 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         purchase_callback: ShopPurchaseCallback,
     ):
         super().__init__(
-            timeout=SHOP_PREVIEW_TIMEOUT_SECONDS,
+            timeout=SHOP_SESSION_TIMEOUT_SECONDS,
         )
 
         self.user_id = user_id
@@ -498,7 +511,7 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         if self.session_expired:
             await interaction.response.send_message(
                 "This ENVI shop session has expired. "
-                "Run `/shoppreview` to open a new one.",
+                "Run `/shop` to open a new one.",
                 ephemeral=True,
             )
             return False
@@ -551,7 +564,7 @@ class ShopComponentsPreview(discord.ui.LayoutView):
             1,
             math.ceil(
                 len(filtered_items)
-                / SHOP_PREVIEW_ITEMS_PER_PAGE
+                / SHOP_ITEMS_PER_PAGE
             ),
         )
 
@@ -568,11 +581,11 @@ class ShopComponentsPreview(discord.ui.LayoutView):
 
         start_index = (
             self.current_page
-            * SHOP_PREVIEW_ITEMS_PER_PAGE
+            * SHOP_ITEMS_PER_PAGE
         )
         end_index = (
             start_index
-            + SHOP_PREVIEW_ITEMS_PER_PAGE
+            + SHOP_ITEMS_PER_PAGE
         )
 
         return filtered_items[start_index:end_index]
@@ -621,8 +634,8 @@ class ShopComponentsPreview(discord.ui.LayoutView):
 
         item = result["item"]
         seller_name = format_item_seller_name(item)
-        settlement = _format_preview_settlement(item)
-        remaining_stock = _format_preview_stock(
+        settlement = _format_shop_settlement(item)
+        remaining_stock = _format_shop_stock(
             result["remaining_stock"]
         )
 
@@ -905,7 +918,7 @@ class ShopComponentsPreview(discord.ui.LayoutView):
         if self.session_expired:
             footer_text = (
                 "-# Shop session expired"
-                " · Run `/shoppreview` to reopen"
+                " · Run `/shop` to reopen"
             )
         elif self.purchase_in_progress:
             footer_text = (
